@@ -80,6 +80,7 @@ try {
   const inbox = await client.session.inbox.list({ sessionID: idle.sessionID });
   const admitted = inbox.find(item => item.type === "synthetic" && item.payload.metadata?.["linklet.v1"]);
   assert.ok(admitted && admitted.type === "synthetic");
+  assert.equal(admitted.payload.description, "Message from Validation caller");
   assert.equal(admitted.payload.text.slice(admitted.payload.text.indexOf("\n\n") + 2, -SYNTHETIC_SUFFIX.length), body);
   assert.equal((await client.session.active())[idle.sessionID], undefined, "FYI must not wake an idle session");
   assert.equal((await invoke("send_message", { sessionID: idle.sessionID, text: "😀".repeat(16384), delivery: "fyi" })).status, "admitted");

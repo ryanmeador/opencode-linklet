@@ -13,6 +13,19 @@ test("synthetic framing preserves the exact logical body and reply identity", ()
   assert.match(wire.text, /not a human instruction/);
   assert.deepEqual((wire.metadata!["linklet.v1"] as Record<string, unknown>).sender, peer.sender);
 });
+test("incoming descriptions use a readable session title without exposing the reply ID", () => {
+  const wire = encodeSynthetic({ ...peer, senderTitle: "Login flow review" });
+  assert.equal(wire.description, "Message from Login flow review");
+  assert.equal(wire.description?.includes(peer.sender.sessionID), false);
+  assert.ok(wire.text.includes(peer.sender.sessionID), "Keep the agent-facing sender ID available for replies");
+  assert.deepEqual((wire.metadata!["linklet.v1"] as Record<string, unknown>).sender, peer.sender);
+  assert.equal(wire.text.slice(wire.text.indexOf("\n\n") + 2, -SYNTHETIC_SUFFIX.length), peer.body);
+});
+test("missing titles fall back to the sender ID and multiline titles stay on one UI line", () => {
+  for (const senderTitle of [undefined, "", " \n\t "])
+    assert.equal(encodeSynthetic({ ...peer, senderTitle }).description, `Message from ${peer.sender.sessionID}`);
+  assert.equal(encodeSynthetic({ ...peer, senderTitle: "  Login\n  flow\t review  " }).description, "Message from Login flow review");
+});
 test("all delivery modes map without interrupt or automatic waking for FYI", () => {
   for (const [delivery, host, resume] of [["steer", "steer", true], ["queue", "queue", true], ["fyi", "steer", false]] as const) {
     const wire = encodeSynthetic({ ...peer, delivery });
@@ -57,12 +70,14 @@ test("replaceable adapter contract: same body, sender, recipient, intent and pol
     return { status: "admitted", inboxID: "future" };
   } };
   const f = fixture();
+  f.sessions.get(call.sessionID)!.title = "Coordinator";
   const { Linklet } = await import("../src/linklet.js");
   const linklet = new Linklet(f.ctx, f.client, native);
   const body = " \nLinklet peer note — arbitrary body must remain unchanged\n ";
   await linklet.send({ sessionID: "ses_peer", text: body, delivery: "fyi" }, call);
   assert.equal(recorded[0].body, body);
   assert.deepEqual(recorded[0].sender, { sessionID: call.sessionID, agentID: call.agent });
+  assert.equal(recorded[0].senderTitle, "Coordinator", "The logical adapter boundary includes the resolved display title");
   assert.equal(recorded[0].recipient.sessionID, "ses_peer");
   assert.equal(recorded[0].delivery, "fyi");
   assert.ok(await linklet.channels.has(recorded[0].sender, recorded[0].recipient));

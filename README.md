@@ -64,7 +64,9 @@ Linklet rejects a connection to the wrong one.
 
 ## Four tools
 
-Tools are in the `linklet` Code Mode namespace, with effective host IDs below.
+Discovery and creation are in the `linklet` Code Mode namespace.
+Sending is exposed directly as `linklet_send_message`, so outgoing messages have
+their own tool entry rather than an `execute` wrapper. Effective host IDs:
 
 | Tool | Inputs and behavior |
 | --- | --- |
@@ -111,9 +113,10 @@ const result = await tools.linklet.find_sessions({
 return result.sessions;
 ```
 
-All four tools now return **structured objects** in Code Mode, not JSON strings.
+Discovery and creation return **structured objects** in Code Mode, not JSON strings.
 Use `await tools.linklet.find_sessions(...)` directly; remove any surrounding
-`JSON.parse`. Human-facing tool rows retain readable text with useful IDs/paths.
+`JSON.parse`. The direct send tool also declares a structured result schema.
+Human-facing tool rows retain readable text with useful IDs/paths.
 
 Continue session searches by copying `nextCursor` into `cursor`, keeping
 `project`/`all`, `search`, `relationship`, and `activeSince` unchanged. Sibling
@@ -154,6 +157,13 @@ ID from the session running the tool, not from a field the caller can fill in or
 from text inside the message. The label helps recipients reply; it does not give
 peer messages the authority of human instructions. Copied labels or metadata
 are not proof of a sender's identity.
+
+Compact incoming descriptions and outgoing progress labels use the corresponding
+session's title. They fall back to its session ID only if no readable title is
+available, so untitled sessions remain identifiable. Routine receipt text does
+not repeat opaque IDs. The reply ID also remains in the agent-facing message and
+structured results where it is needed to address a reply. Titles are for display
+only and never determine permissions or channel identity.
 
 `admitted` means **OpenCode accepted the message**. It may still be waiting: this
 does not confirm that the recipient read it, started work, or completed a task.

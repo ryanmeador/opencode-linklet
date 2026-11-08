@@ -7,7 +7,7 @@ import { agent, call, fixture, session } from "./helpers.js";
 async function registered() {
   const f = fixture();
   const hooks = new Map<string, (event: any) => Promise<void>>();
-  const tools: { name: string; input: any; output: any; options: { permission: string }; execute: (input: unknown, context: typeof call) => Promise<{ output: any; content: string }> }[] = [];
+  const tools: { name: string; input: any; output: any; options: { permission: string; codemode: boolean }; execute: (input: unknown, context: typeof call) => Promise<{ output: any; content: string }> }[] = [];
   const hook = (domain: string) => async (name: string, callback: (event: any) => Promise<void>) => {
     hooks.set(`${domain}/${name}`, callback);
     return { dispose: async () => {} };
@@ -28,9 +28,12 @@ test("registers exactly four focused tools, with independent capability permissi
   const f = await registered();
   assert.deepEqual(f.tools.map(tool => tool.name), ["find_projects", "find_sessions", "create_session", "send_message"]);
   assert.equal(new Set(f.tools.map(tool => tool.options.permission)).size, 4);
+  for (const tool of f.tools) assert.equal(tool.options.codemode, tool.name !== "send_message",
+    "Sending is a direct tool; discovery and creation remain in Code Mode");
   for (const tool of f.tools) assert.equal(tool.input.additionalProperties, false);
   const send = f.tools.find(tool => tool.name === "send_message")!;
   assert.equal(send.input.properties.sender, undefined);
+  assert.equal(send.input.properties.senderTitle, undefined);
   assert.deepEqual(send.input.properties.delivery.enum, ["steer", "queue", "fyi"]);
 });
 test("every tool parameter has help that remains useful when the main description is abbreviated", async () => {
@@ -54,6 +57,7 @@ test("every tool parameter has help that remains useful when the main descriptio
 });
 test("all four tools declare structured outputs and retain readable UI text without undefined fields", async () => {
   const f = await registered();
+  f.sessions.get("ses_peer")!.title = "Peer review";
   const input: Record<string, unknown> = {
     find_projects: {}, find_sessions: { relationship: "roots" },
     create_session: { title: "Structured result" }, send_message: { sessionID: "ses_peer", text: "test", delivery: "fyi" },
@@ -61,7 +65,8 @@ test("all four tools declare structured outputs and retain readable UI text with
   for (const tool of f.tools) {
     assert.equal(tool.output.type, "object");
     assert.equal(tool.output.additionalProperties, false);
-    const context = { ...call, progress: async () => {} };
+    const progress: unknown[] = [];
+    const context = { ...call, progress: async (update: unknown) => { progress.push(update); } };
     const result = await tool.execute(input[tool.name], context);
     assert.equal(typeof result.output, "object");
     assert.notEqual(typeof result.output, "string");
@@ -69,6 +74,7 @@ test("all four tools declare structured outputs and retain readable UI text with
     assert.ok(result.content.length > 10);
     assert.doesNotMatch(result.content, /^\s*\{/);
     assert.deepEqual(result.output, JSON.parse(JSON.stringify(result.output)), "Omit undefined properties before host schema validation");
+    if (tool.name === "send_message") assert.deepEqual(progress, [{ title: "Sending message to Peer review" }]);
   }
   const find = f.tools.find(tool => tool.name === "find_sessions")!;
   assert.ok(find.output.properties.sessions.items.properties.lastExecutionAt);

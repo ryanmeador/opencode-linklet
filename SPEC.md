@@ -189,7 +189,10 @@ The initial adapter uses public `ctx.session.synthetic` (§9). It owns:
 1. Temporary peer-attribution framing around an otherwise unchanged body, since
    synthetic text currently reaches the model as user-role input. Write original
    Linklet wording; no exact legacy prefix is required.
-2. A compact readable `description` and namespaced, versioned sender metadata.
+2. A compact readable `description` using the resolved sender session title.
+   Fall back to its session ID only when no readable title is available. Titles
+   are display-only; keep reply IDs in agent-facing text/metadata as well.
+   Include namespaced, versioned sender metadata.
    Metadata alone must not be assumed to reach the model as provenance.
 3. Delivery/wake mapping, admission receipts, and uncertain transport errors.
 4. Compatibility context guidance explaining peer attribution. Keep this wording
@@ -319,7 +322,7 @@ Approved after the baseline implementation was committed on 2026-11-08:
   siblings are other roots. Exclude the caller from sibling results. Creator
   relationships are not parentage. Existing project permissions and archival
   exclusions continue to apply.
-- All four tools return schema-described objects in Code Mode, plus readable text
+- All four tools return schema-described objects, plus readable text
   for human tool rows. Agents should not need to parse JSON-encoded result strings.
 - Session page tokens are short, opaque, and bound to the complete search scope.
   Filtering must not skip matching results at native page boundaries or falsely

@@ -65,7 +65,7 @@ export function createText(result: { status: string; sessionID?: string; directo
     result.assignment?.detail, result.detail, result.retained].filter(Boolean).join("\n");
 }
 export function sendText(result: { status: string; sessionID: string; detail?: string; warning?: string }) {
-  return [result.status === "admitted" ? `OpenCode accepted the message for session ${result.sessionID}. This does not confirm it was read or completed.` :
-    result.status === "uncertain" ? `Could not confirm whether OpenCode accepted the message for session ${result.sessionID}. Do not resend it automatically.` :
-      `OpenCode did not accept the message for session ${result.sessionID}.`, result.detail, result.warning].filter(Boolean).join("\n");
+  return [result.status === "admitted" ? "OpenCode accepted the message. This does not confirm it was read or completed." :
+    result.status === "uncertain" ? "Could not confirm whether OpenCode accepted the message. Do not resend it automatically." :
+      "OpenCode did not accept the message.", result.detail, result.warning].filter(Boolean).join("\n");
 }

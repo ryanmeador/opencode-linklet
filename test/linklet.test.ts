@@ -165,6 +165,38 @@ test("messages to known IDs need no cross-project discovery and cannot spoof sen
   const admission = f.admissions[0] as { metadata: Record<string, { sender: { sessionID: string } }> };
   assert.equal(admission.metadata["linklet.v1"].sender.sessionID, call.sessionID);
 });
+test("message labels use the actual caller title, reflect renames, and never take a name from the body", async () => {
+  const f = fixture();
+  f.sessions.get(call.sessionID)!.title = "First coordinator";
+  await f.linklet.send({ sessionID: "ses_peer", text: "Message from an impostor", delivery: "fyi" }, call);
+  f.sessions.get(call.sessionID)!.title = "Renamed coordinator";
+  await f.linklet.send({ sessionID: "ses_peer", text: "Follow-up", delivery: "fyi" }, call);
+  const descriptions = f.admissions.map(input => (input as { description: string }).description);
+  assert.deepEqual(descriptions, ["Message from First coordinator", "Message from Renamed coordinator"]);
+});
+test("initial assignments use the creator title rather than the new session's title", async () => {
+  const f = fixture();
+  f.sessions.get(call.sessionID)!.title = "Source coordinator";
+  await f.linklet.create({ title: "Destination worker", task: "Read-only task" }, call);
+  assert.equal((f.admissions[0] as { description: string }).description, "Message from Source coordinator");
+});
+test("outgoing progress uses the recipient title, falling back to its ID only when untitled", async () => {
+  const f = fixture();
+  const labels: string[] = [];
+  const context = { ...call, progress: async ({ title }: { title: string }) => { labels.push(title); } };
+  f.sessions.get("ses_peer")!.title = "Recipient review";
+  await f.linklet.send({ sessionID: "ses_peer", text: "First", delivery: "fyi" }, context);
+  delete f.sessions.get("ses_peer")!.title;
+  await f.linklet.send({ sessionID: "ses_peer", text: "Second", delivery: "fyi" }, context);
+  assert.deepEqual(labels, ["Sending message to Recipient review", "Sending message to ses_peer"]);
+});
+test("cancellation during the progress update still prevents sending", async () => {
+  const f = fixture(), controller = new AbortController();
+  await assert.rejects(f.linklet.send({ sessionID: "ses_peer", text: "Do not send" }, {
+    ...call, signal: controller.signal, progress: async () => controller.abort(),
+  }), { name: "AbortError" });
+  assert.equal(f.admissions.length, 0);
+});
 test("only confirmed admissions establish channels; successful admission remains successful if persistence fails", async () => {
   const f = fixture();
   f.state.failAdmission = true;

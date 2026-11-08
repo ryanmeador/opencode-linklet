@@ -1,10 +1,13 @@
 import type { SessionSyntheticInput } from "@opencode/client";
+import { sessionLabel } from "./display.js";
 
 export type Delivery = "steer" | "queue" | "fyi";
 export interface Identity { sessionID: string; agentID: string }
 export interface PeerInput {
   body: string;
   sender: Identity;
+  /** Resolved session title for display only; never used to authorize a message. */
+  senderTitle?: string;
   recipient: Identity;
   delivery: Delivery;
 }
@@ -41,7 +44,7 @@ export function encodeSynthetic(input: PeerInput): SessionSyntheticInput {
   return {
     sessionID: input.recipient.sessionID,
     text,
-    description: `Message from session ${input.sender.sessionID}`,
+    description: `Message from ${sessionLabel(input.sender.sessionID, input.senderTitle)}`,
     metadata: { "linklet.v1": {
       sender: { ...input.sender }, recipient: { ...input.recipient }, delivery: input.delivery,
     } },

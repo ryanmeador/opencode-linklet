@@ -107,10 +107,9 @@ export async function register(ctx: Plugin.Context, service: () => Promise<Linkl
           delivery: { enum: ["steer", "queue", "fyi"], description: "steer (default): next model step, waking an idle session. queue: after current work, waking an idle session. fyi: next model step if running, without waking an idle session. Input order is not guaranteed; later human input can cause a pending FYI to be read." },
         }, ["sessionID", "text"]),
         output: sendOutput,
-        options: { namespace: "linklet", permission: actions.send, codemode: true },
+        options: { namespace: "linklet", permission: actions.send, codemode: false },
         execute: async (input, call) => {
           const args = input as { sessionID: string; text: string; delivery?: Delivery };
-          await call.progress({ title: `Sending message to session ${args.sessionID}` });
           return toolResult(await (await service()).send(args, call), sendText);
         },
       });

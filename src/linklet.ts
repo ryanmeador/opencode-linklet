@@ -4,11 +4,13 @@ import type { OpenCodeClient, SessionInfo, SessionActiveOutput, AgentInfo, Model
 import { actions, askByDefault, Channels, defaultAgent, explicitGrant, match, needsCrossAgent, selectAgent } from "./policy.js";
 import { syntheticTransport, validateBody, type Identity, type Transport, type Delivery } from "./transport.js";
 import { lastExecutionTime, parseActiveSince, MAX_SCANNED_SESSIONS, type FindInput } from "./discovery.js";
+import { sessionLabel } from "./display.js";
 export type { FindInput } from "./discovery.js";
 
 export interface Call {
   sessionID: string; agent: string; messageID: string; id: string;
   signal?: AbortSignal;
+  progress?: (update: { title: string }) => Promise<void>;
 }
 export interface CreateInput {
   project?: string; checkout?: string; title?: string; agent?: string;
@@ -393,7 +395,9 @@ export class Linklet {
     }
     if (call.signal?.aborted) return cancelled();
     if (input.task === undefined) return { ...result, status: "created", activity: "idle" };
-    const receipt = await this.transport.admit({ sender: caller.peer, recipient, body: input.task, delivery: "steer" });
+    const receipt = await this.transport.admit({ sender: caller.peer,
+      ...(caller.session.title !== undefined ? { senderTitle: caller.session.title } : {}),
+      recipient, body: input.task, delivery: "steer" });
     return { ...result, status: "created", assignment: receipt,
       detail: "This session does not send results back automatically; ask it to reply when needed. A message marked admitted has been accepted by OpenCode, but the task may not have started or finished." };
   }
@@ -403,7 +407,10 @@ export class Linklet {
     await this.assert(call, actions.send, input.sessionID);
     const caller = await this.caller(call), target = await this.target(input.sessionID);
     await this.authorizePeer(call, caller.peer, target.peer);
+    await call.progress?.({ title: `Sending message to ${sessionLabel(target.peer.sessionID, target.session.title)}` });
+    call.signal?.throwIfAborted();
     const receipt = await this.transport.admit({ body: input.text, sender: caller.peer,
+      ...(caller.session.title !== undefined ? { senderTitle: caller.session.title } : {}),
       recipient: target.peer, delivery: input.delivery ?? "steer" });
     if (receipt.status === "admitted") {
       try { await this.channels.establish(caller.peer, target.peer); }

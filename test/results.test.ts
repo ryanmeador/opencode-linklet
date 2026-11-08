@@ -23,3 +23,7 @@ test("creation and sending text keep uncertainty and acceptance distinct from co
   assert.match(sendText({ status: "admitted", sessionID: "ses_test" }), /does not confirm it was read or completed/);
   assert.match(sendText({ status: "uncertain", sessionID: "ses_test" }), /Do not resend it automatically/);
 });
+test("routine message receipts do not expose session IDs in human-facing text", () => {
+  for (const status of ["admitted", "uncertain", "failed"])
+    assert.equal(sendText({ status, sessionID: "ses_internal" }).includes("ses_internal"), false);
+});

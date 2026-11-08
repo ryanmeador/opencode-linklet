@@ -31,7 +31,7 @@ before/after/permission hooks, foreground-child mid-task replies, native result
 preservation, and an alternative transport test double with unchanged logical
 identity/body/intent/authorization.
 
-Implementation validation on 2026-11-08: **66 contract tests passed**, including
+Implementation validation on 2026-11-08: **73 contract tests passed**, including
 type-check/build; both checkout-build and freshly packed/installed-package host
 smoke suites passed against OpenCode 2.2.6.
 
@@ -55,6 +55,11 @@ execution timestamps without an API fallback or JSON parsing.
 Review coverage also checks that an execution start/end during or after retrieval
 of the shared activity snapshot yields unknown, rather than a stale running/idle
 inference.
+Message-label coverage checks resolved sender/recipient titles, ID fallbacks only
+for untitled sessions, multiline titles, renames, initial assignments, adapter
+replacement, preserved reply IDs, and ID-free routine receipt text. Display titles
+do not affect policy; cancellation during an outgoing progress update still stops
+the message from being sent.
 
 ## Real-host smoke coverage
 
