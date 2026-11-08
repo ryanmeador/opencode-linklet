@@ -3,6 +3,7 @@ import { connect } from "./connection.js";
 import { Linklet, type CreateInput, type FindInput } from "./linklet.js";
 import { syntheticTransport, type Delivery } from "./transport.js";
 import { actions } from "./policy.js";
+import { projectOutput, sessionOutput, createOutput, sendOutput, toolResult, projectText, sessionText, createText, sendText } from "./results.js";
 
 const string = { type: "string", minLength: 1 } as const;
 const limit = { type: "integer", minimum: 1, maximum: 100, description: "Maximum results per page, from 1 to 100. Defaults to 20." } as const;
@@ -61,20 +62,24 @@ export async function register(ctx: Plugin.Context, service: () => Promise<Linkl
           limit,
           offset: { type: "integer", minimum: 0, description: "Copy nextOffset from the previous result to continue. Omit to start at the first result." },
         }),
+        output: projectOutput,
         options: { namespace: "linklet", permission: actions.projects, codemode: true },
-        execute: async (input, call) => ({ content: JSON.stringify(await (await service()).findProjects(input as { all?: boolean; search?: string; limit?: number; offset?: number }, call)) }),
+        execute: async (input, call) => toolResult(await (await service()).findProjects(input as { all?: boolean; search?: string; limit?: number; offset?: number }, call), projectText),
       });
       editor.add({ name: "find_sessions", description: "Find sessions and activity without reading conversations. Searches this project by default; archived sessions are excluded. Idle is not proof of success; unknown means activity could not be checked.",
         input: object({
           project: { ...string, description: "Project ID, name, or canonical checkout path; the match must identify one project. Omit to search this session's project. Another project may require approval. Do not combine with all: true." },
           all: { type: "boolean", description: "Set true to search sessions across all projects; may ask for approval. Do not combine with project. Defaults to false." },
           search: { ...string, description: "Text to search session titles. Omit to list sessions without a text filter." },
+          relationship: { enum: ["all", "roots", "siblings"], description: "all (default): include independent and native child sessions. roots: independent sessions only. siblings: other sessions with this session's native parent; for a root caller, other root sessions. Creator IDs do not determine siblings." },
+          activeSince: { ...string, format: "date-time", description: "ISO 8601 cutoff with a timezone, such as 2026-11-08T12:00:00Z. Include sessions with a known execution start/end on or after the cutoff, or currently running sessions. Viewing or editing session metadata does not count. Unknown execution times alone do not match." },
           limit,
-          cursor: { ...string, description: "Copy nextCursor from the previous result. Keep project/all and search unchanged. Omit to start a new search." },
-          sessionID: { ...string, description: "Look up one exact session ID, including its activity. Other search, project, and paging options are ignored. A session in another project may require discovery approval." },
+          cursor: { ...string, description: "Copy nextCursor from the previous result. Keep project/all, search, relationship, and activeSince unchanged. Sibling searches must use the same caller session. Omit to start a new search." },
+          sessionID: { ...string, description: "Look up one exact session ID, including activity and known execution time. Other search, project, relationship, time, and paging options are ignored. A session in another project may require discovery approval." },
         }),
+        output: sessionOutput,
         options: { namespace: "linklet", permission: actions.sessions, codemode: true },
-        execute: async (input, call) => ({ content: JSON.stringify(await (await service()).findSessions(input as FindInput, call)) }),
+        execute: async (input, call) => toolResult(await (await service()).findSessions(input as FindInput, call), sessionText),
       });
       editor.add({ name: "create_session", description: "Create an independent session with no copied conversation history; returns without waiting for its work. Results are not sent back automatically—ask for a reply. Do not repeat an uncertain creation; it may already have happened.",
         input: object({
@@ -91,8 +96,9 @@ export async function register(ctx: Plugin.Context, service: () => Promise<Linkl
             description: "Include this to create a new worktree using OpenCode's configured strategy and destination. Omit to use an existing checkout. Do not repeat this request after an uncertain creation." },
           task: { type: "string", description: "Optional initial assignment, up to 65,536 UTF-8 bytes. Omit to leave the session idle. Ask it to message results or failures back if needed; replies are not automatic." },
         }),
+        output: createOutput,
         options: { namespace: "linklet", permission: actions.create, codemode: true },
-        execute: async (input, call) => ({ content: JSON.stringify(await (await service()).create(input as CreateInput, call)) }),
+        execute: async (input, call) => toolResult(await (await service()).create(input as CreateInput, call), createText),
       });
       editor.add({ name: "send_message", description: "Send a message to one session ID. Returns OpenCode's acceptance receipt, not a completed result. Do not resend an uncertain message; it may already have been accepted. Avoid duplicate results and receipt-only acknowledgements.",
         input: object({
@@ -100,11 +106,12 @@ export async function register(ctx: Plugin.Context, service: () => Promise<Linkl
           text: { type: "string", description: "Complete message text, including whitespace; maximum 65,536 UTF-8 bytes. Oversize messages fail without truncation or automatic splitting." },
           delivery: { enum: ["steer", "queue", "fyi"], description: "steer (default): next model step, waking an idle session. queue: after current work, waking an idle session. fyi: next model step if running, without waking an idle session. Input order is not guaranteed; later human input can cause a pending FYI to be read." },
         }, ["sessionID", "text"]),
+        output: sendOutput,
         options: { namespace: "linklet", permission: actions.send, codemode: true },
         execute: async (input, call) => {
           const args = input as { sessionID: string; text: string; delivery?: Delivery };
           await call.progress({ title: `Sending message to session ${args.sessionID}` });
-          return { content: JSON.stringify(await (await service()).send(args, call)) };
+          return toolResult(await (await service()).send(args, call), sendText);
         },
       });
     });

@@ -1,7 +1,10 @@
 import type { Plugin } from "@opencode/plugin";
-import type { OpenCodeClient, SessionInfo, AgentInfo, ModelRef, Project } from "@opencode/client";
+import { randomBytes } from "node:crypto";
+import type { OpenCodeClient, SessionInfo, SessionActiveOutput, AgentInfo, ModelRef, Project } from "@opencode/client";
 import { actions, askByDefault, Channels, defaultAgent, explicitGrant, match, needsCrossAgent, selectAgent } from "./policy.js";
 import { syntheticTransport, validateBody, type Identity, type Transport, type Delivery } from "./transport.js";
+import { lastExecutionTime, parseActiveSince, MAX_SCANNED_SESSIONS, type FindInput } from "./discovery.js";
+export type { FindInput } from "./discovery.js";
 
 export interface Call {
   sessionID: string; agent: string; messageID: string; id: string;
@@ -11,7 +14,6 @@ export interface CreateInput {
   project?: string; checkout?: string; title?: string; agent?: string;
   model?: ModelRef; worktree?: { name?: string }; task?: string;
 }
-export interface FindInput { project?: string; all?: boolean; search?: string; limit?: number; cursor?: string; sessionID?: string }
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 const knownRejection = (error: unknown) => error instanceof RetainedResourceError || !!error && typeof error === "object" &&
   "_tag" in error && ["InvalidRequestError", "AgentNotFoundError", "ModelNotFoundError", "UnauthorizedError", "ForbiddenError", "WorktreeError", "ProjectNotFoundError"].includes(String(error._tag));
@@ -187,25 +189,34 @@ export class Linklet {
     return { projects, nextOffset: offset + limit < matches.length ? offset + limit : null };
   }
 
-  async activity(session: SessionInfo) {
+  async activity(session: SessionInfo, snapshot?: PromiseSettledResult<SessionActiveOutput>, snapshotStartedAt?: number) {
     const [active, permissions, forms] = await Promise.allSettled([
-      this.client.session.active(), this.ctx.permission.list({ sessionID: session.id }),
+      snapshot ? snapshot.status === "fulfilled" ? Promise.resolve(snapshot.value) : Promise.reject(snapshot.reason) :
+        this.client.session.active(), this.ctx.permission.list({ sessionID: session.id }),
       this.client.session.form.list({ sessionID: session.id }),
     ]);
     if (permissions.status === "fulfilled" && permissions.value.length)
       return { activity: "blocked", reason: "waiting for permission approval" };
     if (forms.status === "fulfilled" && forms.value.length)
       return { activity: "blocked", reason: "waiting for input" };
+    const lastExecution = lastExecutionTime(session);
+    // The API does not report when it captured the active snapshot. An execution
+    // boundary during or after retrieval makes either inference uncertain.
+    if (snapshotStartedAt !== undefined && lastExecution !== undefined && lastExecution > snapshotStartedAt)
+      return { activity: "unknown" };
     if (active.status === "fulfilled" && active.value[session.id]) return { activity: "running" };
     if (active.status === "fulfilled" && permissions.status === "fulfilled" && forms.status === "fulfilled")
       return { activity: "idle" };
     return { activity: "unknown" };
   }
-  async summary(session: SessionInfo) {
+  async summary(session: SessionInfo, snapshot?: PromiseSettledResult<SessionActiveOutput>, snapshotStartedAt?: number) {
     const creator = await this.ctx.storage.get(`v1/creator/${encodeURIComponent(session.id)}`);
+    const lastExecution = lastExecutionTime(session);
     return { sessionID: session.id, title: session.title, projectID: session.projectID,
       directory: session.location.directory, parentID: session.parentID,
-      ...(typeof creator === "string" ? { creatorID: creator } : {}), ...await this.activity(session) };
+      ...(typeof creator === "string" ? { creatorID: creator } : {}),
+      ...(lastExecution !== undefined ? { lastExecutionAt: new Date(lastExecution).toISOString() } : {}),
+      ...await this.activity(session, snapshot, snapshotStartedAt) };
   }
   async findSessions(input: FindInput, call: Call) {
     await this.assert(call, actions.sessions);
@@ -217,35 +228,91 @@ export class Linklet {
       return { sessions: [await this.summary(target)], nextCursor: null };
     }
     if (input.all && input.project) throw new Error("Use project to choose one project, or all: true to search all projects—not both.");
+    const relationship = input.relationship ?? "all";
+    if (!["all", "roots", "siblings"].includes(relationship))
+      throw new Error("relationship must be all, roots, or siblings. Use roots to hide native subagents, or siblings to find other sessions with the same native parent as this session.");
+    const since = parseActiveSince(input.activeSince);
     if (input.all) await this.assert(call, actions.discover);
     const projectID = input.all ? undefined : input.project ? (await this.project(input.project, {
       call, callerProjectID: session.projectID, action: actions.discover,
     })).id : session.projectID;
-    // Never accept raw host cursors: their embedded filters could widen access.
+    const parentID = relationship === "roots" ? null : relationship === "siblings" ? session.parentID ?? null : undefined;
+    const excludeID = relationship === "siblings" ? session.id : undefined;
+    const scope = JSON.stringify({ projectID: projectID ?? null, search: input.search ?? null,
+      relationship, parentID: parentID ?? null, excludeID: excludeID ?? null, activeSince: since ?? null });
+    // Opaque plugin tokens bind the host cursor to every filter. Never trust
+    // caller-provided host cursors, which can contain a broader project scope.
     let hostCursor: string | undefined;
     if (input.cursor) {
-      let cursor: { version: number; projectID?: string; search?: string; host: string };
-      try {
-        cursor = JSON.parse(Buffer.from(input.cursor, "base64url").toString());
-        if (!cursor || cursor.version !== 1 || typeof cursor.host !== "string") throw new Error("invalid cursor");
-      } catch {
+      if (!/^[A-Za-z0-9_-]{24}$/.test(input.cursor))
         throw new Error("This page token is invalid. Copy nextCursor from the previous result into cursor, or omit cursor to start a new search.");
-      }
-      if (cursor.projectID !== projectID || cursor.search !== input.search)
-        throw new Error("This page token belongs to a different search. Keep project/all and search unchanged, or omit cursor to start a new search.");
-      // Host cursors are stored, not trusted from caller-controlled encoding.
-      const saved = await this.ctx.storage.get(`v1/cursor/${encodeURIComponent(cursor.host)}`);
-      if (saved !== JSON.stringify({ projectID, search: input.search })) throw new Error("This page token was not issued by Linklet, or is no longer available. Omit cursor to start a new search.");
-      hostCursor = cursor.host;
+      const saved = await this.ctx.storage.get(`v2/cursor/${input.cursor}`) as { version?: number; scope?: string; host?: string } | undefined;
+      if (!saved || saved.version !== 2 || typeof saved.host !== "string")
+        throw new Error("This page token was not issued by Linklet, or is no longer available. Omit cursor to start a new search.");
+      if (saved.scope !== scope)
+        throw new Error("This page token belongs to a different search. Keep project/all, search, relationship, and activeSince unchanged, or omit cursor to start a new search. Sibling searches must also use the same caller session.");
+      hostCursor = saved.host;
     }
-    const page = await this.ctx.session.list({ ...(projectID ? { project: projectID } : {}),
-      ...(input.search ? { search: input.search } : {}), archived: false, limit: Math.min(input.limit ?? 20, 100),
-      ...(hostCursor ? { cursor: hostCursor } : {}) });
-    const next = page.cursor.next;
-    if (next) await this.ctx.storage.set(`v1/cursor/${encodeURIComponent(next)}`, JSON.stringify({ projectID, search: input.search }));
-    return { sessions: await Promise.all(page.data.filter(item => item.time.archived === undefined &&
-      (!projectID || item.projectID === projectID)).map(item => this.summary(item))),
-      nextCursor: next ? Buffer.from(JSON.stringify({ version: 1, projectID, search: input.search, host: next })).toString("base64url") : null };
+    const snapshotStartedAt = Date.now();
+    const [snapshot] = await Promise.allSettled([this.client.session.active()]);
+    const observedAt = Date.now();
+    const summaries = new Map<string, ReturnType<Linklet["summary"]>>();
+    const summarize = (item: SessionInfo) => {
+      let value = summaries.get(item.id);
+      if (!value) { value = this.summary(item, snapshot, snapshotStartedAt); summaries.set(item.id, value); }
+      return value;
+    };
+    const matches = async (item: SessionInfo) => {
+      if (item.time.archived !== undefined || projectID && item.projectID !== projectID ||
+        parentID !== undefined && (item.parentID ?? null) !== parentID || item.id === excludeID) return false;
+      const executed = lastExecutionTime(item);
+      if (since === undefined || executed !== undefined && executed >= since) return true;
+      // A session can still be working even if its execution started before the
+      // cutoff. Blocked sessions are not assumed to be executing now.
+      return since <= observedAt && snapshot.status === "fulfilled" && !!snapshot.value[item.id] && (await summarize(item)).activity === "running";
+    };
+    let scanned = 0;
+    const fetchPage = async (cursor: string | undefined, limit: number) => {
+      call.signal?.throwIfAborted();
+      const page = await this.ctx.session.list({ ...(projectID ? { project: projectID } : {}),
+        ...(input.search ? { search: input.search } : {}), ...(parentID !== undefined ? { parentID } : {}),
+        archived: false, limit: Math.min(limit, MAX_SCANNED_SESSIONS - scanned), ...(cursor ? { cursor } : {}) },
+        call.signal ? { signal: call.signal } : undefined);
+      call.signal?.throwIfAborted();
+      scanned += page.data.length;
+      return page;
+    };
+    const limit = Math.min(input.limit ?? 20, 100);
+    const sessions: Awaited<ReturnType<Linklet["summary"]>>[] = [];
+    let more = true;
+    while (sessions.length < limit && more && scanned < MAX_SCANNED_SESSIONS) {
+      const page = await fetchPage(hostCursor, limit - sessions.length);
+      for (const item of page.data) if (await matches(item)) sessions.push(await summarize(item));
+      const next = page.cursor.next ?? undefined;
+      more = page.data.length > 0 && !!next && next !== hostCursor;
+      hostCursor = next;
+    }
+    // The host can return a next cursor on its final nonempty page. Look ahead
+    // for a real match, keeping the cursor BEFORE that page so nothing is lost.
+    let nextHost: string | undefined;
+    while (more && hostCursor && scanned < MAX_SCANNED_SESSIONS) {
+      const start = hostCursor;
+      const page = await fetchPage(start, 100);
+      let found = false;
+      for (const item of page.data) if (await matches(item)) { found = true; break; }
+      if (found) { nextHost = start; break; }
+      const next = page.cursor.next ?? undefined;
+      more = page.data.length > 0 && !!next && next !== start;
+      hostCursor = next;
+    }
+    const scanLimitReached = more && !nextHost && scanned >= MAX_SCANNED_SESSIONS;
+    if (scanLimitReached) nextHost = hostCursor;
+    let nextCursor: string | null = null;
+    if (nextHost) {
+      nextCursor = randomBytes(18).toString("base64url");
+      await this.ctx.storage.set(`v2/cursor/${nextCursor}`, { version: 2, scope, host: nextHost });
+    }
+    return { sessions, nextCursor, ...(scanLimitReached ? { scanLimitReached: true } : {}) };
   }
 
   async create(input: CreateInput, call: Call) {

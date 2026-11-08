@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode/plugin";
-import type { AgentInfo, OpenCodeClient, SessionInfo, PermissionRuleset } from "@opencode/client";
+import type { AgentInfo, OpenCodeClient, SessionInfo, PermissionRuleset, SessionListInput } from "@opencode/client";
 import { Linklet, type Call } from "../src/linklet.js";
 
 export const call: Call = { sessionID: "ses_caller", agent: "build", messageID: "msg_test", id: "call_test" };
@@ -20,6 +20,8 @@ export function fixture() {
   const checks: { action: string; resources: string[]; metadata?: Record<string, unknown> }[] = [];
   const admissions: unknown[] = [];
   const resources: unknown[] = [];
+  const lists: SessionListInput[] = [];
+  const cursors = new Map<string, { input: SessionListInput; offset: number }>();
   let denied: string | undefined;
   const state = {
     permissions: [] as PermissionRuleset,
@@ -62,10 +64,22 @@ export function fixture() {
         if (!value) throw Object.assign(new Error("missing"), { _tag: "SessionNotFoundError" });
         return value;
       },
-      list: async (input: { project?: string; archived?: boolean; parentID?: string }) => ({
-        data: [...sessions.values()].filter(session => (!input.project || session.projectID === input.project) &&
-          (!input.parentID || session.parentID === input.parentID) && (input.archived !== false || session.time.archived === undefined)), cursor: {},
-      }),
+      list: async (input: SessionListInput = {}) => {
+        lists.push(input);
+        const continued = input.cursor ? cursors.get(input.cursor) : undefined;
+        if (input.cursor && !continued) throw new Error("Unknown host cursor");
+        const filters = continued?.input ?? input, offset = continued?.offset ?? 0;
+        const matches = [...sessions.values()].filter(session => (!filters.project || session.projectID === filters.project) &&
+          (filters.parentID === undefined || (session.parentID ?? null) === filters.parentID) &&
+          (filters.archived !== false || session.time.archived === undefined) &&
+          (!filters.search || (session.title ?? "").includes(filters.search)));
+        const data = matches.slice(offset, offset + (input.limit ?? 20));
+        // Mirror the real host, which can provide a next cursor on its last
+        // nonempty page rather than only when there are additional results.
+        const next = data.length ? `host-${cursors.size}` : undefined;
+        if (next) cursors.set(next, { input: filters, offset: offset + data.length });
+        return { data, cursor: next ? { next } : {} };
+      },
       create: async (input: { location: { directory: string }; agent?: string }) => {
         resources.push(input);
         if (state.failCreation) throw new Error("timeout");
@@ -88,6 +102,6 @@ export function fixture() {
     session: { active: async () => state.active, form: { list: async () => state.forms } },
     model: { list: async () => ({ data: [] }) },
   } as unknown as OpenCodeClient;
-  return { ctx, client, linklet: new Linklet(ctx, client), sessions, storage, agents, checks, admissions, resources, state,
+  return { ctx, client, linklet: new Linklet(ctx, client), sessions, storage, agents, checks, admissions, resources, lists, state,
     deny: (action: string) => { denied = action; } };
 }

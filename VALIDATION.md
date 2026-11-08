@@ -31,7 +31,7 @@ before/after/permission hooks, foreground-child mid-task replies, native result
 preservation, and an alternative transport test double with unchanged logical
 identity/body/intent/authorization.
 
-Implementation validation on 2026-11-08: **49 contract tests passed**, including
+Implementation validation on 2026-11-08: **66 contract tests passed**, including
 type-check/build; both checkout-build and freshly packed/installed-package host
 smoke suites passed against OpenCode 2.2.6.
 
@@ -44,6 +44,17 @@ The wording audit adds coverage for all approval questions, every tool parameter
 help, connection/setup remedies, malformed page tokens, and plain-language
 message rejection/uncertainty. Live agent-use observations are recorded in
 `DOGFOODING.md`.
+
+The approved discovery/output follow-up covers execution-only timestamps, strict
+timezone-aware cutoffs, older ongoing executions, unknown/blocked activity,
+root/sibling parentage, pagination across sparse filtered pages, short tokens
+bound to all filters and sibling caller identity, bounded scans, no empty final
+page, one global activity snapshot per search, typed output schemas, and readable
+UI text for all four tools. The live 24-hour sibling query also returned actual
+execution timestamps without an API fallback or JSON parsing.
+Review coverage also checks that an execution start/end during or after retrieval
+of the shared activity snapshot yields unknown, rather than a stale running/idle
+inference.
 
 ## Real-host smoke coverage
 
@@ -61,6 +72,10 @@ and the built production JavaScript through an excluded test-only RPC harness:
 - [x] Channel storage visible from a second project's plugin instance.
 - [x] Explicit send denials defeat established channels.
 - [x] Session discovery without transcript exposure.
+- [x] Native root/sibling filters through the public host list API.
+- [x] Creation/title changes are not misreported as recent execution.
+- [x] Short-token pagination has no duplicates or phantom final page.
+- [x] Structured results and separate readable text from every tool.
 - [x] Full server-restart persistence.
 
 Native registry reads can initially be empty while a destination location boots.

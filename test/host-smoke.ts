@@ -64,8 +64,11 @@ try {
   const invoke = async (tool: string, args: object, sessionID = caller.id, agent = "plan") => {
     const result = await rpc.invoke({ tool: `linklet_${tool}`, args, sessionID, agent }, {
       location: { directory: project }, signal: AbortSignal.timeout(15000),
-    }) as { content: string };
-    return JSON.parse(result.content);
+    }) as { output: Record<string, any>; content: string };
+    assert.equal(typeof result.output, "object", "Tools must return structured output, not a JSON string");
+    assert.ok(result.output);
+    assert.equal(typeof result.content, "string", "Keep readable text for the tool-call UI");
+    return result.output;
   };
   const projects = await invoke("find_projects", {});
   assert.ok(projects.projects.some((item: { id: string }) => item.id === caller.projectID));
@@ -127,6 +130,31 @@ try {
   await assert.rejects(invoke("send_message", { sessionID: built.sessionID, text: "Must be denied", delivery: "fyi" }));
   const found = await invoke("find_sessions", {});
   assert.ok(found.sessions.some((item: { sessionID: string }) => item.sessionID === idle.sessionID));
+  const child = await client.session.create({ location: { directory: project }, parentID: caller.id, agent: "plan", title: "Validation child" });
+  const sibling = await client.session.create({ location: { directory: project }, parentID: caller.id, agent: "plan", title: "Validation sibling" });
+  const roots = await invoke("find_sessions", { relationship: "roots" });
+  assert.ok(roots.sessions.every((item: { parentID?: string }) => !item.parentID));
+  assert.ok(!roots.sessions.some((item: { sessionID: string }) => item.sessionID === child.id));
+  const siblings = await invoke("find_sessions", { relationship: "siblings" }, child.id);
+  assert.deepEqual(siblings.sessions.map((item: { sessionID: string }) => item.sessionID), [sibling.id]);
+
+  await client.session.update({ sessionID: idle.sessionID, title: "Metadata update is not execution" });
+  const recent = await invoke("find_sessions", { activeSince: new Date(Date.now() - 86400000).toISOString() });
+  assert.equal(recent.sessions.length, 0, "Creating sessions and changing titles must not count as execution");
+  const lookedUp = await invoke("find_sessions", { sessionID: idle.sessionID });
+  assert.equal("lastExecutionAt" in lookedUp.sessions[0], false, "Do not invent a timestamp for an idle session that never executed");
+
+  const paged: string[] = [];
+  let cursor: string | null = null;
+  do {
+    const page = await invoke("find_sessions", { relationship: "roots", limit: 1, ...(cursor ? { cursor } : {}) });
+    paged.push(...page.sessions.map((item: { sessionID: string }) => item.sessionID));
+    cursor = page.nextCursor;
+    if (cursor) assert.equal(cursor.length, 24);
+    assert.ok(paged.length <= roots.sessions.length, "Pagination must progress without duplicate pages");
+  } while (cursor);
+  assert.deepEqual([...paged].sort(), roots.sessions.map((item: { sessionID: string }) => item.sessionID).sort());
+  assert.equal(new Set(paged).size, paged.length);
   await client.session.update({ sessionID: caller.id, permissions: [] });
   server.process.kill("SIGTERM");
   await once(server.process, "exit");

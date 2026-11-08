@@ -215,7 +215,7 @@ test("activity reports blockers, running and unknown rather than treating missin
 });
 test("untrusted pagination cannot inject a host cursor with broader scope", async () => {
   const f = fixture();
-  const cursor = Buffer.from(JSON.stringify({ version: 1, projectID: "project_one", host: "attacker-chosen-all-projects-cursor" })).toString("base64url");
+  const cursor = "a".repeat(24);
   await assert.rejects(f.linklet.findSessions({ cursor }, call), /not issued by Linklet/);
 });
 test("bad page tokens explain how to restart or continue the search", async () => {
@@ -223,6 +223,7 @@ test("bad page tokens explain how to restart or continue the search", async () =
   for (const cursor of ["not-a-page-token", Buffer.from("null").toString("base64url"), Buffer.from("{}").toString("base64url")]) {
     await assert.rejects(f.linklet.findSessions({ cursor }, call), /page token is invalid.*Copy nextCursor.*start a new search/);
   }
-  const cursor = Buffer.from(JSON.stringify({ version: 1, projectID: "different-project", host: "opaque" })).toString("base64url");
-  await assert.rejects(f.linklet.findSessions({ cursor }, call), /different search.*Keep project\/all and search unchanged/);
+  const cursor = "b".repeat(24);
+  f.storage.set(`v2/cursor/${cursor}`, { version: 2, scope: "different-search", host: "opaque" });
+  await assert.rejects(f.linklet.findSessions({ cursor }, call), /different search.*Keep project\/all, search, relationship, and activeSince unchanged/);
 });

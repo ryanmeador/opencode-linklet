@@ -7,7 +7,7 @@ import { agent, call, fixture, session } from "./helpers.js";
 async function registered() {
   const f = fixture();
   const hooks = new Map<string, (event: any) => Promise<void>>();
-  const tools: { name: string; input: any; options: { permission: string } }[] = [];
+  const tools: { name: string; input: any; output: any; options: { permission: string }; execute: (input: unknown, context: typeof call) => Promise<{ output: any; content: string }> }[] = [];
   const hook = (domain: string) => async (name: string, callback: (event: any) => Promise<void>) => {
     hooks.set(`${domain}/${name}`, callback);
     return { dispose: async () => {} };
@@ -51,6 +51,30 @@ test("every tool parameter has help that remains useful when the main descriptio
   assert.match(send.delivery.description, /steer \(default\)/);
   assert.match(send.delivery.description, /without waking an idle session/);
   assert.match(send.text.description, /65,536 UTF-8 bytes/);
+});
+test("all four tools declare structured outputs and retain readable UI text without undefined fields", async () => {
+  const f = await registered();
+  const input: Record<string, unknown> = {
+    find_projects: {}, find_sessions: { relationship: "roots" },
+    create_session: { title: "Structured result" }, send_message: { sessionID: "ses_peer", text: "test", delivery: "fyi" },
+  };
+  for (const tool of f.tools) {
+    assert.equal(tool.output.type, "object");
+    assert.equal(tool.output.additionalProperties, false);
+    const context = { ...call, progress: async () => {} };
+    const result = await tool.execute(input[tool.name], context);
+    assert.equal(typeof result.output, "object");
+    assert.notEqual(typeof result.output, "string");
+    assert.equal(typeof result.content, "string");
+    assert.ok(result.content.length > 10);
+    assert.doesNotMatch(result.content, /^\s*\{/);
+    assert.deepEqual(result.output, JSON.parse(JSON.stringify(result.output)), "Omit undefined properties before host schema validation");
+  }
+  const find = f.tools.find(tool => tool.name === "find_sessions")!;
+  assert.ok(find.output.properties.sessions.items.properties.lastExecutionAt);
+  const props = find.input.properties;
+  assert.deepEqual(props.relationship.enum, ["all", "roots", "siblings"]);
+  assert.match(props.activeSince.description, /Viewing or editing session metadata does not count/);
 });
 test("native child work remains native; hook authorizes it and persists only newly created/continued channels", async () => {
   const f = await registered();

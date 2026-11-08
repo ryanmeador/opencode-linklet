@@ -303,3 +303,28 @@ requests to copy or extend the earlier coordination plugin.
 No separately filed native agent-message provenance issue was found among the
 author's OpenCode issues during this check. Native provenance remains a future
 integration point (§6), not a currently promised API or filed dependency.
+
+## 12. Approved discovery/output follow-up
+
+Approved after the baseline implementation was committed on 2026-11-08:
+
+- Session discovery includes optional `lastExecutionAt`: the latest known native
+  execution start/end, in UTC. It must not use creation, viewed, or generic update
+  times as a substitute, and does not claim to identify the latest model/tool step.
+- `activeSince` accepts an explicit-timezone ISO 8601 cutoff. Match known execution
+  starts/ends on or after the cutoff and sessions currently running. Unknown times
+  alone do not qualify; blocked status alone is not proof of recent execution.
+- `relationship` is `all` (default), `roots`, or `siblings`. Roots have no native
+  parent. Siblings share the caller's native parent; an independent caller's
+  siblings are other roots. Exclude the caller from sibling results. Creator
+  relationships are not parentage. Existing project permissions and archival
+  exclusions continue to apply.
+- All four tools return schema-described objects in Code Mode, plus readable text
+  for human tool rows. Agents should not need to parse JSON-encoded result strings.
+- Session page tokens are short, opaque, and bound to the complete search scope.
+  Filtering must not skip matching results at native page boundaries or falsely
+  offer an ordinary empty final page. Bound scans and explicitly report when the
+  caller must continue checking candidates; do not claim a partial scan is complete.
+
+This does not add transcript access, execution-outcome reporting, extra tools,
+automatic result forwarding, or a separate message-delivery system.

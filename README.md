@@ -69,7 +69,7 @@ Tools are in the `linklet` Code Mode namespace, with effective host IDs below.
 | Tool | Inputs and behavior |
 | --- | --- |
 | `linklet_find_projects` | Optional `all`, `search`, `limit`, `offset`. Defaults to this project. Returns registered projects and saved checkouts, including projects without sessions; `nextOffset` continues the result. |
-| `linklet_find_sessions` | Optional `project`, `all`, `search`, `limit`, `cursor`, or `sessionID` lookup. Defaults to this project; returns metadata, known parent/creator relationships, and activity, never conversation content. Repeat the scope/search when passing `nextCursor`. |
+| `linklet_find_sessions` | Optional `project`, `all`, `search`, `relationship`, `activeSince`, `limit`, `cursor`, or `sessionID` lookup. Defaults to this project; returns metadata, parent/creator relationships, activity, and known execution timestamps—not conversation content. |
 | `linklet_create_session` | Optional `project`, `checkout`, `title`, `agent`, `model`, `worktree`, `task`. Creates a separate session, not a child or a copy of this conversation. Returns without waiting for task completion. Omit task to leave it idle. |
 | `linklet_send_message` | Required `sessionID`, `text`; optional `delivery`: `steer` (default), `queue`, `fyi`. Exactly one explicit recipient; complete body, no aliases or broadcasting. |
 
@@ -80,6 +80,49 @@ agent ID first, then an exact unique display name. Independent sessions need a
 visible agent that supports primary sessions, such as Build or Plan—not a
 subagent-only agent. Models use `{ providerID, id, variant? }` and
 must be available at the destination; use native model-discovery tools.
+
+### Recent sessions, roots, and siblings
+
+`find_sessions` supports:
+
+- `relationship: "all"` (default): include independent sessions and native children.
+- `relationship: "roots"`: include sessions without a native parent.
+- `relationship: "siblings"`: other sessions with this session's native parent.
+  For an independent/root caller, this means other roots. The caller is excluded;
+  having the same creator does not make sessions siblings. Project scope still applies.
+- `activeSince`: an ISO 8601 timestamp with a timezone. Include sessions with a
+  known execution start/end on or after that cutoff, plus sessions currently
+  running (even if their execution started earlier). Unknown execution times
+  alone do not match; old blocked sessions are not assumed to be doing work now.
+
+Each result includes `lastExecutionAt` when OpenCode reports an execution start or
+end. It is a UTC timestamp for the latest of those two boundaries—not the time of
+the most recent model/tool step. Creation, title changes, viewing, and generic
+metadata updates are deliberately ignored. A missing timestamp means unknown,
+not “never ran.” Current activity is reported separately.
+
+For example, in Code Mode:
+
+```js
+const result = await tools.linklet.find_sessions({
+  relationship: "siblings",
+  activeSince: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+});
+return result.sessions;
+```
+
+All four tools now return **structured objects** in Code Mode, not JSON strings.
+Use `await tools.linklet.find_sessions(...)` directly; remove any surrounding
+`JSON.parse`. Human-facing tool rows retain readable text with useful IDs/paths.
+
+Continue session searches by copying `nextCursor` into `cursor`, keeping
+`project`/`all`, `search`, `relationship`, and `activeSince` unchanged. Sibling
+searches must continue from the same caller session. Page size may change.
+Tokens are 24 characters, and ordinary final pages have `nextCursor: null`.
+To keep large searches bounded, a call examines at most 1,000 candidates;
+`scanLimitReached: true` means continue with the returned cursor to check more,
+not that another matching session is guaranteed. Tokens issued before this
+update must be replaced by starting a new search; stored channels are unaffected.
 
 Without `project`, creation uses the caller's **actual session directory**.
 An explicit project uses its canonical checkout unless `checkout` names one of
@@ -183,6 +226,8 @@ your configuration yourself if replacing it. Native subagents remain unchanged.
   boundary, not tool contracts/policy. The native adapter in tests is a test
   double, not an invented production API.
 - `src/linklet.ts`: public-host operations, authorization, discovery, creation.
+- `src/discovery.ts`: recent-execution timestamps, cutoff validation, and search bounds.
+- `src/results.ts`: structured result schemas and readable tool-row summaries.
 - `src/connection.ts`: authenticated, same-instance public client connection.
 - `src/index.ts`: four tools, context guidance, and native subagent hooks.
 

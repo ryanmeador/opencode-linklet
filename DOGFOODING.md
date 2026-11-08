@@ -42,12 +42,14 @@ The four focused tool names and default delivery made the common path simple.
 The following are concrete usability debts, not claims that everything is
 polished:
 
-1. **Structured results are JSON strings in Code Mode.** A single call displays
-   reasonably, but scripts composing calls need `JSON.parse`. The actual catalog
-   signatures return `Promise<string | null>`. Prefer typed object results.
-2. **Pagination costs unnecessary effort.** Searching the two live-test sessions
+1. **Structured results were JSON strings in Code Mode (corrected).** A single call displayed
+   reasonably, but scripts composing calls needed `JSON.parse`. The actual catalog
+   signatures returned `Promise<string | null>`. Tools now declare result schemas
+   and return typed objects, with separate readable text for the UI.
+2. **Pagination cost unnecessary effort (corrected).** Searching the two live-test sessions
    with `limit: 5` returned a 483-character cursor; following it returned an empty
-   page. Short plugin cursors and meaningful end-of-results detection would help.
+   page. Tokens are now 24 characters; lookahead checks for another matching
+   result before offering a next page, except when an explicit scan bound is reached.
 3. **Parameter help was too dependent on long tool descriptions (corrected).**
    The abbreviated catalog cut off the main descriptions. Each input now has
    help explaining its meaning, defaults, limits, and relevant permission scope.
@@ -91,3 +93,23 @@ fields, status codes, limits, delivery behavior, and approval rules are unchange
 Malformed page tokens now receive a helpful Linklet error instead of a raw JSON
 parser exception. The separate JSON-result, cursor-length, and duplicate-project
 issues above are not changed by this wording pass.
+
+## Approved discovery/output follow-up
+
+After committing the baseline, implemented feedback from another agent about
+finding sibling sessions that worked in the past 24 hours. `find_sessions` now
+returns `lastExecutionAt` from execution start/end metadata, accepts `activeSince`
+and `relationship` filters, and scans filtered pages without discarding matches.
+All four tools return structured objects; their UI text is readable prose rather
+than raw JSON. The JSON-result and cursor debts above are resolved by this later
+feature pass, not by the earlier wording-only audit.
+
+The live same-project `relationship: "siblings"` / 24-hour query returned the two
+completed test peers with their known execution times and no extra empty page.
+The result was an object, accessed directly without `JSON.parse`. Duplicate
+project disambiguation and standalone-server setup remain separate limitations.
+
+The original feedback session subsequently verified its real inventory: the
+24-hour sibling search returned the expected eight sessions in pages of 3, 3,
+and 2, with no duplicates, child subagents, self, API fallback, or JSON parsing.
+The final cursor was null. A root-only cross-check added exactly the caller.
