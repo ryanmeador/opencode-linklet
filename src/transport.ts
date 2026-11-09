@@ -73,7 +73,7 @@ export function syntheticTransport(
             UnauthorizedError: "OpenCode rejected the message because authentication failed. Check the server connection settings; the message was not accepted.",
             ForbiddenError: "OpenCode did not allow this message. Check the applicable permissions; the message was not accepted.",
           } as Record<string, string>)[String(tag)] :
-            "Linklet could not confirm whether OpenCode accepted the message. Do not resend it automatically; it may already have been accepted." };
+            "Acceptance unconfirmed. Do not resend automatically; it may already have been accepted." };
       }
     },
   };

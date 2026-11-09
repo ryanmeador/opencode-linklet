@@ -6,7 +6,7 @@ const list = (items: unknown) => ({ type: "array" as const, items });
 const activity = { type: "string", enum: ["running", "blocked", "idle", "unknown"] };
 const receiptProperties = {
   status: { type: "string", enum: ["admitted", "uncertain", "failed"],
-    description: "admitted means OpenCode accepted the message, not that it was read or completed. Never automatically retry uncertain delivery." },
+    description: "admitted = accepted, not completed. Do not retry uncertain delivery." },
   inboxID: text, detail: text,
 };
 export const projectOutput = object({
@@ -58,14 +58,14 @@ export function sessionText(result: { sessions: { sessionID: string; title?: str
 }
 export function createText(result: { status: string; sessionID?: string; directory: string; worktree?: string; assignment?: { status: string; detail?: string }; detail?: string; retained?: string }) {
   return [result.status === "created" ? `Created session ${result.sessionID}.` :
-    result.status === "uncertain" ? "Could not confirm whether session creation completed. Do not repeat the request automatically." : "Session setup could not be completed.",
+    result.status === "uncertain" ? "Creation unconfirmed. Do not retry automatically." : "Session setup failed.",
     result.status !== "created" && result.sessionID ? `Known session: ${result.sessionID}.` : "",
     `Directory: ${result.directory}`, result.worktree ? `Worktree kept: ${result.worktree}` : "",
-    result.assignment ? `Initial task: ${result.assignment.status === "admitted" ? "accepted by OpenCode; not confirmed started or completed" : result.assignment.status}.` : "",
+    result.assignment ? `Initial task: ${result.assignment.status === "admitted" ? "accepted; completion unconfirmed" : result.assignment.status}.` : "",
     result.assignment?.detail, result.detail, result.retained].filter(Boolean).join("\n");
 }
 export function sendText(result: { status: string; sessionID: string; detail?: string; warning?: string }) {
-  return [result.status === "admitted" ? "OpenCode accepted the message. This does not confirm it was read or completed." :
-    result.status === "uncertain" ? "Could not confirm whether OpenCode accepted the message. Do not resend it automatically." :
-      "OpenCode did not accept the message.", result.detail, result.warning].filter(Boolean).join("\n");
+  return [result.detail || (result.status === "admitted" ? "Message accepted; completion unconfirmed." :
+    result.status === "uncertain" ? "Acceptance unconfirmed. Do not retry automatically." :
+      "Message rejected."), result.warning].filter(Boolean).join("\n");
 }

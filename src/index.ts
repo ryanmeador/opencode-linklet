@@ -81,7 +81,7 @@ export async function register(ctx: Plugin.Context, service: () => Promise<Linkl
         options: { namespace: "linklet", permission: actions.sessions, codemode: true },
         execute: async (input, call) => toolResult(await (await service()).findSessions(input as FindInput, call), sessionText),
       });
-      editor.add({ name: "create_session", description: "Create an independent session with no copied conversation history; returns without waiting for its work. Results are not sent back automatically—ask for a reply. Do not repeat an uncertain creation; it may already have happened.",
+      editor.add({ name: "create_session", description: "Create an independent session without copied history or waiting for completion. Ask for a reply if you need results. Do not retry uncertain creation.",
         input: object({
           project: { ...string, description: "Project ID, name, or canonical checkout path; the match must identify one project. Omit to use this session's actual current directory. An explicit project uses its default checkout unless checkout is supplied." },
           checkout: { ...string, description: "An existing registered checkout directory in project. Requires project. Omit to use that project's default checkout." },
@@ -94,13 +94,13 @@ export async function register(ctx: Plugin.Context, service: () => Promise<Linkl
           }, ["providerID", "id"]), description: "Optional model override using exact IDs. Omit to use the destination's model defaults, not this session's selected model." },
           worktree: { ...object({ name: { ...string, description: "Optional name for the new worktree. OpenCode chooses one if omitted." } }),
             description: "Include this to create a new worktree using OpenCode's configured strategy and destination. Omit to use an existing checkout. Do not repeat this request after an uncertain creation." },
-          task: { type: "string", description: "Optional initial assignment, up to 65,536 UTF-8 bytes. Omit to leave the session idle. Ask it to message results or failures back if needed; replies are not automatic." },
+          task: { type: "string", description: "Optional initial assignment, up to 65,536 UTF-8 bytes. Omit to leave the session idle. Request a reply for results or failures." },
         }),
         output: createOutput,
         options: { namespace: "linklet", permission: actions.create, codemode: true },
         execute: async (input, call) => toolResult(await (await service()).create(input as CreateInput, call), createText),
       });
-      editor.add({ name: "send_message", description: "Send a message to one session ID. Returns OpenCode's acceptance receipt, not a completed result. Do not resend an uncertain message; it may already have been accepted. Avoid duplicate results and receipt-only acknowledgements.",
+      editor.add({ name: "send_message", description: "Send to one session ID. Acceptance is not completion. Do not retry uncertain sends or send receipt-only acknowledgements.",
         input: object({
           sessionID: { ...string, description: "Exact recipient session ID. No names, parent/creator aliases, or multiple recipients. Known IDs can be messaged across projects, subject to permissions." },
           text: { type: "string", description: "Complete message text, including whitespace; maximum 65,536 UTF-8 bytes. Oversize messages fail without truncation or automatic splitting." },
@@ -120,8 +120,8 @@ export async function register(ctx: Plugin.Context, service: () => Promise<Linkl
       event.system.push({ type: "text", text: [
         "Use the native subagent tool for self-contained delegated tasks and rely on its result delivery. " +
         "Use Linklet for separate sessions that can continue independently; new sessions do not inherit this conversation. " +
-        "Linklet sessions do not send results back automatically, so request a result or failure message when needed. " +
-        "Avoid duplicate results, receipt-only acknowledgements, and repeated progress checks without a useful reason.",
+        "Request replies for results or failures. " +
+        "Avoid duplicate results, receipt-only acknowledgements, and unnecessary progress checks.",
         guidance,
         session.parentID ? `Parent session (native subagent): ${session.parentID}.` : "",
         typeof creator === "string" ? `Created by session: ${creator}. This session is independent; its creator is not its parent.` : "",

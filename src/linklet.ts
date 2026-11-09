@@ -399,7 +399,7 @@ export class Linklet {
       ...(caller.session.title !== undefined ? { senderTitle: caller.session.title } : {}),
       recipient, body: input.task, delivery: "steer" });
     return { ...result, status: "created", assignment: receipt,
-      detail: "This session does not send results back automatically; ask it to reply when needed. A message marked admitted has been accepted by OpenCode, but the task may not have started or finished." };
+      detail: "Ask for a reply if you need results." };
   }
 
   async send(input: { sessionID: string; text: string; delivery?: Delivery }, call: Call) {
