@@ -18,6 +18,7 @@ export const projectOutput = object({
 export const sessionOutput = object({
   sessions: list(object({ sessionID: text, title: text, projectID: text, directory: text,
     parentID: text, creatorID: text, activity, reason: text,
+    commitSHA: { type: "string", description: "Current checkout HEAD, not a session-owned commit. Omitted when unavailable; says nothing about uncommitted changes." },
     lastExecutionAt: { type: "string", format: "date-time",
       description: "Latest known execution start or end, in UTC. Omitted when unknown; viewing, creation, and generic updates are not counted." },
   }, ["sessionID", "projectID", "directory", "activity"])),
@@ -47,10 +48,11 @@ export function projectText(result: { projects: { id: string; name?: string; can
     `- ${project.name ? `${project.name} — ${project.canonical}` : project.canonical}\n  ID: ${project.id}\n  Checkouts: ${project.checkouts.map(checkout => checkout.directory).join(", ") || "none recorded"}`),
   result.nextOffset !== null ? `Next page: offset ${result.nextOffset}.` : ""].filter(Boolean).join("\n");
 }
-export function sessionText(result: { sessions: { sessionID: string; title?: string; directory: string; activity: string; lastExecutionAt?: string; reason?: string; parentID?: string; creatorID?: string }[]; nextCursor: string | null; scanLimitReached?: boolean }) {
+export function sessionText(result: { sessions: { sessionID: string; title?: string; directory: string; activity: string; commitSHA?: string; lastExecutionAt?: string; reason?: string; parentID?: string; creatorID?: string }[]; nextCursor: string | null; scanLimitReached?: boolean }) {
   return [`Found ${result.sessions.length} ${result.sessions.length === 1 ? "session" : "sessions"}.`, ...result.sessions.map(session => [
     `- ${session.title || "(untitled)"} — ${session.activity}${session.reason ? ` (${session.reason})` : ""}`,
-    `  ID: ${session.sessionID}`, `  Directory: ${session.directory}`,
+     `  ID: ${session.sessionID}`, `  Directory: ${session.directory}`,
+    session.commitSHA ? `  HEAD: ${session.commitSHA}` : "",
     `  Last execution: ${session.lastExecutionAt ?? "not reported"}`,
     session.parentID ? `  Parent: ${session.parentID}` : "", session.creatorID ? `  Creator: ${session.creatorID}` : "",
   ].filter(Boolean).join("\n")), result.nextCursor ? `Next page: ${result.nextCursor}.` : "",

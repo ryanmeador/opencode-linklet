@@ -8,10 +8,11 @@ test("project/session summaries keep useful IDs and paths without raw JSON", () 
   assert.match(project.content, /Named — \/canonical/);
   assert.match(project.content, /project-id/);
   assert.match(project.content, /none recorded/);
-  const page = toolResult({ sessions: [{ sessionID: "ses_test", directory: "/test", activity: "unknown" }], nextCursor: "short-token", scanLimitReached: true }, sessionText);
+  const page = toolResult({ sessions: [{ sessionID: "ses_test", directory: "/test", activity: "unknown", commitSHA: "a".repeat(40) }], nextCursor: "short-token", scanLimitReached: true }, sessionText);
   assert.match(page.content, /Found 1 session/);
   assert.match(page.content, /Last execution: not reported/);
   assert.match(page.content, /Scan limit reached/);
+  assert.ok(page.content.includes(`HEAD: ${"a".repeat(40)}`));
 });
 
 test("creation and sending text keep uncertainty and acceptance distinct from completion", () => {

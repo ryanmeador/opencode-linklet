@@ -72,6 +72,12 @@ try {
   };
   const projects = await invoke("find_projects", {});
   assert.ok(projects.projects.some((item: { id: string }) => item.id === caller.projectID));
+  const unborn = await invoke("find_sessions", { sessionID: caller.id });
+  assert.equal("commitSHA" in unborn.sessions[0], false);
+  execFileSync("git", ["--no-pager", "-C", project, "-c", "user.name=Validation", "-c", "user.email=test@example.com",
+    "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "Validation"], { stdio: "ignore" });
+  const head = execFileSync("git", ["--no-pager", "-C", project, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  assert.equal((await invoke("find_sessions", { sessionID: caller.id })).sessions[0].commitSHA, head);
   const idle = await invoke("create_session", { title: "Idle validation", agent: "Plan" });
   assert.equal(idle.status, "created");
   assert.equal((await client.session.get({ sessionID: idle.sessionID })).parentID, undefined);

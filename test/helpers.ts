@@ -102,6 +102,6 @@ export function fixture() {
     session: { active: async () => state.active, form: { list: async () => state.forms } },
     model: { list: async () => ({ data: [] }) },
   } as unknown as OpenCodeClient;
-  return { ctx, client, linklet: new Linklet(ctx, client), sessions, storage, agents, checks, admissions, resources, lists, state,
+  return { ctx, client, linklet: new Linklet(ctx, client, undefined, async () => undefined), sessions, storage, agents, checks, admissions, resources, lists, state,
     deny: (action: string) => { denied = action; } };
 }

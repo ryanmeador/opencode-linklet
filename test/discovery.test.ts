@@ -7,6 +7,27 @@ import { call, fixture, session } from "./helpers.js";
 
 const cutoff = "2026-11-07T12:00:00Z";
 const since = Date.parse(cutoff);
+test("discovery includes checkout HEAD once per returned directory and refreshes on each call", async t => {
+  const f = fixture(), sha = "a".repeat(40);
+  const read = t.mock.method(f.linklet, "checkoutCommit", async () => sha);
+  const page = await f.linklet.findSessions({}, call);
+  assert.equal(page.sessions.length, 2);
+  assert.ok(page.sessions.every(item => item.commitSHA === sha));
+  assert.equal(read.mock.callCount(), 1, "Shared checkout is inspected once");
+  const single = await f.linklet.findSessions({ sessionID: "ses_peer" }, call);
+  assert.equal(single.sessions[0].commitSHA, sha);
+  assert.equal(read.mock.callCount(), 2, "Single-ID lookup gets fresh checkout state");
+});
+test("discovery omits unavailable HEAD and does not inspect unauthorized directories", async t => {
+  const f = fixture();
+  const read = t.mock.method(f.linklet, "checkoutCommit", async () => undefined);
+  assert.ok((await f.linklet.findSessions({}, call)).sessions.every(item => !("commitSHA" in item)));
+  read.mock.resetCalls();
+  f.sessions.set("foreign", session("foreign", { projectID: "project_two", location: { directory: "/two" } }));
+  f.deny(actions.discover);
+  await assert.rejects(f.linklet.findSessions({ sessionID: "foreign" }, call));
+  assert.equal(read.mock.callCount(), 0);
+});
 const ids = (page: { sessions: { sessionID: string }[] }) => page.sessions.map(item => item.sessionID).sort();
 
 test("execution timestamps use start/end only, never creation, viewing or generic updates", async () => {

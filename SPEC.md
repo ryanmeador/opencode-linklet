@@ -22,6 +22,10 @@ mechanism, not Linklet's permanent message protocol (§6).
 
 ## 2. MVP tools and scope
 
+Session discovery includes optional `commitSHA`: the current checkout HEAD,
+not session-owned work or merge readiness. Read each distinct returned directory
+once per call; omit unavailable values. Do not scan dirty state or fetch refs.
+
 Four focused tools; names below describe capabilities, not final API spellings:
 
 | Tool | Responsibility |

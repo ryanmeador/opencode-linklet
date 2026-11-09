@@ -103,6 +103,12 @@ the most recent model/tool step. Creation, title changes, viewing, and generic
 metadata updates are deliberately ignored. A missing timestamp means unknown,
 not “never ran.” Current activity is reported separately.
 
+Results also include `commitSHA`, the current HEAD of the session's checkout,
+when available. It describes checkout state, not a commit owned by that session.
+Linklet reads each distinct returned directory once per call, with a two-second
+timeout per Git query. Missing/non-Git directories and unborn HEADs omit the
+field. No dirty-state scan, fetch, or merge analysis is performed.
+
 For example, in Code Mode:
 
 ```js

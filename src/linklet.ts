@@ -5,6 +5,7 @@ import { actions, askByDefault, Channels, defaultAgent, explicitGrant, match, ne
 import { syntheticTransport, validateBody, type Identity, type Transport, type Delivery } from "./transport.js";
 import { lastExecutionTime, parseActiveSince, MAX_SCANNED_SESSIONS, type FindInput } from "./discovery.js";
 import { sessionLabel } from "./display.js";
+import { checkoutCommit as readCheckoutCommit } from "./checkout.js";
 export type { FindInput } from "./discovery.js";
 
 export interface Call {
@@ -43,7 +44,8 @@ export class Linklet {
   readonly channels: Channels;
   readonly transport: Transport;
   private readonly nativePending = new Map<string, { parent: Identity; agentID: string }>();
-  constructor(readonly ctx: Plugin.Context, readonly client: OpenCodeClient, transport?: Transport) {
+  constructor(readonly ctx: Plugin.Context, readonly client: OpenCodeClient, transport?: Transport,
+    readonly checkoutCommit: typeof readCheckoutCommit = readCheckoutCommit) {
     this.channels = new Channels({
       get: key => ctx.storage.get(key),
       set: (key, channel) => ctx.storage.set(key, { version: channel.version,
@@ -227,7 +229,7 @@ export class Linklet {
       const target = await this.ctx.session.get({ sessionID: input.sessionID });
       if (target.projectID !== session.projectID) await this.assert(call, actions.discover, target.projectID);
       if (target.time.archived !== undefined) throw new Error("This session is archived, so Linklet does not return its details. Choose an unarchived session from find_sessions.");
-      return { sessions: [await this.summary(target)], nextCursor: null };
+      return { sessions: await this.checkoutSummaries([await this.summary(target)], call), nextCursor: null };
     }
     if (input.all && input.project) throw new Error("Use project to choose one project, or all: true to search all projects—not both.");
     const relationship = input.relationship ?? "all";
@@ -314,7 +316,22 @@ export class Linklet {
       nextCursor = randomBytes(18).toString("base64url");
       await this.ctx.storage.set(`v2/cursor/${nextCursor}`, { version: 2, scope, host: nextHost });
     }
-    return { sessions, nextCursor, ...(scanLimitReached ? { scanLimitReached: true } : {}) };
+    return { sessions: await this.checkoutSummaries(sessions, call), nextCursor, ...(scanLimitReached ? { scanLimitReached: true } : {}) };
+  }
+
+  private async checkoutSummaries(sessions: Awaited<ReturnType<Linklet["summary"]>>[], call: Call) {
+    const commits = new Map<string, string | undefined>();
+    // Only inspect returned sessions, not filtered rows or pagination lookahead.
+    // Serial reads bound process count even on large pages.
+    for (const { directory } of sessions) if (!commits.has(directory)) {
+      call.signal?.throwIfAborted();
+      commits.set(directory, await this.checkoutCommit(directory, call.signal));
+    }
+    call.signal?.throwIfAborted();
+    return sessions.map(session => {
+      const commitSHA = commits.get(session.directory);
+      return { ...session, ...(commitSHA ? { commitSHA } : {}) };
+    });
   }
 
   async create(input: CreateInput, call: Call) {
