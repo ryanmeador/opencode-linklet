@@ -31,7 +31,7 @@ before/after/permission hooks, foreground-child mid-task replies, native result
 preservation, and an alternative transport test double with unchanged logical
 identity/body/intent/authorization.
 
-Implementation validation on 2026-11-13: **83 contract tests passed**, including
+Implementation validation on 2026-11-14: **84 contract tests passed**, including
 type-check/build; both checkout-build and freshly packed/installed-package host
 smoke suites passed against OpenCode 2.2.6.
 

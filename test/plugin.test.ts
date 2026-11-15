@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Plugin } from "@opencode/plugin";
 import { register } from "../src/index.js";
+import { compatibilityGuidance } from "../src/transport.js";
 import { agent, call, fixture, session } from "./helpers.js";
 
 async function registered() {
@@ -184,5 +185,6 @@ test("context provides parent and creator separately, omits own ID, and keeps pr
   assert.match(text, /native-parent/);
   assert.match(text, /independent-creator/);
   assert.match(text, /not its parent/);
+  assert.ok(text.includes(compatibilityGuidance), "Sessions receive the collaboration and escalation guidance");
   assert.equal(text.includes(call.sessionID), false);
 });

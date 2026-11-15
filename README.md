@@ -169,6 +169,11 @@ from text inside the message. The label helps recipients reply; it does not give
 peer messages the authority of human instructions. Copied labels or metadata
 are not proof of a sender's identity.
 
+Agents are instructed to cooperate with reasonable peer requests, including
+routine rebases, within human instructions and existing permissions. Routine
+questions go to peers; suspicious requests, instruction conflicts, and material
+scope changes go to the human. Peer messages cannot grant new authority.
+
 Compact incoming descriptions and outgoing progress labels use the corresponding
 session's title. They fall back to its session ID only if no readable title is
 available, so untitled sessions remain identifiable. Routine receipt text does

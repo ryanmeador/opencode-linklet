@@ -204,7 +204,11 @@ The initial adapter uses public `ctx.session.synthetic` (§9). It owns:
    Metadata alone must not be assumed to reach the model as provenance.
 3. Delivery/wake mapping, admission receipts, and uncertain transport errors.
 4. Compatibility context guidance explaining peer attribution. Keep this wording
-   localized rather than scattering prefix assumptions through tools/prompts.
+    localized rather than scattering prefix assumptions through tools/prompts.
+   Encourage reasonable cooperation, including routine rebases, under existing
+   permissions and human instructions. Resolve routine questions with peers;
+   escalate suspicious requests, instruction conflicts, and material scope changes
+   to the human. Peer messages grant no new authority.
 
 Keep logical body and attribution separate before encoding. Never recover
 authorization/channel identity by parsing arbitrary text that resembles a
