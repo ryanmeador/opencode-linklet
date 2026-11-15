@@ -5,8 +5,8 @@ New sessions start without the creator's conversation history and can continue
 independently. For self-contained delegated tasks, prefer OpenCode's native
 `subagent` tool and its automatic result delivery.
 
-This is an unpublished MVP implementation of [`SPEC.md`](SPEC.md). The package
-is private to avoid accidentally reserving/publishing the provisional name.
+This is an experimental implementation of [`SPEC.md`](SPEC.md), licensed under
+the [MIT License](LICENSE).
 
 ## Install locally
 
@@ -265,8 +265,8 @@ npm run test:package # pack/install in isolation, then validate the installed bu
 
 Host validation uses a separate HOME/XDG tree under `/tmp/opencode`, never the
 user's live configuration, service, or sessions. It makes no model requests and
-retains its artifacts/logs for inspection. See [`VALIDATION.md`](VALIDATION.md)
-for verified behavior and remaining integration checks.
+retains its artifacts/logs for inspection. `npm pack` builds the production
+output automatically through `prepack`; it does not run the tests.
 
 **Deliberate limits:** exact host/SDK version pin; no transcript/history tools,
 custom inbox/broker, interrupt, archive discovery, automatic forwarding, or
@@ -282,7 +282,7 @@ checked, Linklet keeps the new session idle instead of sending its task.
 
 Delivery ordering during active work and full native background execution still
 need model-backed integration tests; the contract tests do not prove those
-scheduler guarantees. See `DOGFOODING.md` for the live workflows already exercised.
+scheduler guarantees.
 
 `npm audit` currently reports moderate transitive advisories in the pinned
 OpenCode SDK dependency tree. No high/critical advisories were reported during

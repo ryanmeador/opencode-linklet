@@ -1,15 +1,16 @@
 {
   "name": "opencode-linklet",
   "version": "0.1.0",
-  "private": true,
+  "license": "MIT",
   "description": "Lightweight peer coordination for independent OpenCode V2 sessions",
   "type": "module",
   "types": "./dist/index.d.ts",
   "engines": { "node": ">=22" },
   "exports": { ".": "./dist/index.js" },
-  "files": ["dist", "README.md", "SPEC.md", "VALIDATION.md", "DOGFOODING.md"],
+  "files": ["dist", "README.md", "SPEC.md", "LICENSE"],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "check": "npm run typecheck && npm test && npm run build",
