@@ -76,8 +76,13 @@ their own tool entry rather than an `execute` wrapper. Effective host IDs:
 | `linklet_send_message` | Required `sessionID`, `text`; optional `delivery`: `steer` (default), `queue`, `fyi`. Exactly one explicit recipient; complete body, no aliases or broadcasting. |
 
 Search pages default to 20 items, maximum 100. Projects match exact IDs/canonical
-paths first, then case-insensitive name/path tokens. Ambiguous project selections
-return candidates rather than guessing. Agent selection accepts an exact
+paths first, then case-insensitive name/path tokens. The caller's current or
+registered checkout path also identifies its project; duplicate canonical paths
+prefer the caller's own project. An explicit project still uses its canonical
+checkout unless `checkout` is supplied. Unmatched selectors fail without a
+cross-project prompt. Ambiguous selections require discovery approval before
+showing candidates, not creation approval; exact foreign project selections
+retain their normal boundary checks. Agent selection accepts an exact
 agent ID first, then an exact unique display name. Independent sessions need a
 visible agent that supports primary sessions, such as Build or Plan—not a
 subagent-only agent. Models use `{ providerID, id, variant? }` and

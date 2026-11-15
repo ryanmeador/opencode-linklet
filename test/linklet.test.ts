@@ -31,6 +31,57 @@ test("explicit same-project names and canonical paths do not request cross-proje
   await f.linklet.findSessions({ project: "/one" }, call);
   assert.equal(f.checks.some(check => check.action === actions.crossCreate || check.action === actions.discover), false);
 });
+test("current and registered caller worktrees resolve to its project without cross-project prompts", async t => {
+  for (const selector of ["/one/subdir", "/one/sibling"]) {
+    const f = fixture();
+    const lookups: string[] = [];
+    t.mock.method(f.ctx.worktree, "list", async ({ projectID }: { projectID: string }) => {
+      lookups.push(projectID);
+      return [{ directory: "/one" }, { directory: "/one/sibling" }, { directory: "/one/destination" }];
+    });
+    const result = await f.linklet.create({ project: selector, checkout: "/one/destination" }, call);
+    assert.equal(result.status, "created");
+    assert.equal(result.directory, "/one/destination");
+    const page = await f.linklet.findSessions({ project: selector }, call);
+    assert.ok(page.sessions.every(item => item.projectID === "project_one"));
+    assert.ok(lookups.every(id => id === "project_one"), "Resolve only the caller's worktree inventory");
+    assert.equal(f.checks.some(check => check.action === actions.crossCreate || check.action === actions.discover), false);
+  }
+});
+test("duplicate canonical paths prefer the caller's project but explicit foreign IDs still need approval", async () => {
+  const f = fixture();
+  f.state.projects.push({ ...f.state.projects[0], id: "project_stale" });
+  const result = await f.linklet.create({ project: "/one" }, call);
+  assert.equal(result.directory, "/one");
+  await f.linklet.findSessions({ project: "/one" }, call);
+  assert.equal(f.checks.some(check => check.action === actions.crossCreate || check.action === actions.discover), false);
+  f.deny(actions.crossCreate);
+  await assert.rejects(f.linklet.create({ project: "project_stale" }, call), /denied/);
+  assert.equal(f.resources.length, 1);
+});
+test("unmatched project selectors fail without cross-project prompts or resource creation", async () => {
+  const f = fixture();
+  for (const project of ["/missing-worktree", "unknown project"])
+    await assert.rejects(f.linklet.create({ project, worktree: {} }, call), /No registered project matches/);
+  assert.equal(f.checks.some(check => check.action === actions.crossCreate || check.action === actions.discover), false);
+  assert.equal(f.resources.length, 0);
+});
+test("ambiguous creation requires discovery approval, not cross-project creation approval", async () => {
+  const f = fixture();
+  f.state.projects.push({ ...f.state.projects[1], id: "project_duplicate" });
+  f.deny(actions.discover);
+  await assert.rejects(f.linklet.create({ project: "Hollow sphere" }, call), /host permission denied/);
+  assert.equal(f.checks.at(-1)!.action, actions.discover);
+  assert.equal(f.checks.some(check => check.action === actions.crossCreate), false);
+  assert.equal(f.resources.length, 0);
+  f.deny("none");
+  await assert.rejects(f.linklet.create({ project: "Hollow sphere" }, call), /More than one project.*project_duplicate/);
+  assert.equal(f.resources.length, 0);
+});
+test("a caller checkout selector still uses canonical placement unless checkout is specified", async () => {
+  const f = fixture();
+  assert.equal((await f.linklet.create({ project: "/one/subdir" }, call)).directory, "/one");
+});
 test("invalid agent/model and denied boundaries create no resources", async () => {
   for (const input of [{ agent: "BUILD" }, { model: { providerID: "bad", id: "bad" } }, { checkout: "/bad" }]) {
     const f = fixture();

@@ -68,7 +68,7 @@ export async function register(ctx: Plugin.Context, service: () => Promise<Linkl
       });
       editor.add({ name: "find_sessions", description: "Find sessions and activity without reading conversations. Searches this project by default; archived sessions are excluded. Idle is not proof of success; unknown means activity could not be checked.",
         input: object({
-          project: { ...string, description: "Project ID, name, or canonical checkout path; the match must identify one project. Omit to search this session's project. Another project may require approval. Do not combine with all: true." },
+          project: { ...string, description: "Project ID, name, or canonical checkout path; this session's current or registered checkout also identifies its project. Omit to search this session's project. Another project may require approval. Do not combine with all: true." },
           all: { type: "boolean", description: "Set true to search sessions across all projects; may ask for approval. Do not combine with project. Defaults to false." },
           search: { ...string, description: "Text to search session titles. Omit to list sessions without a text filter." },
           relationship: { enum: ["all", "roots", "siblings"], description: "all (default): include independent and native child sessions. roots: independent sessions only. siblings: other sessions with this session's native parent; for a root caller, other root sessions. Creator IDs do not determine siblings." },
@@ -83,7 +83,7 @@ export async function register(ctx: Plugin.Context, service: () => Promise<Linkl
       });
       editor.add({ name: "create_session", description: "Create an independent session without copied history or waiting for completion. Ask for a reply if you need results. Do not retry uncertain creation.",
         input: object({
-          project: { ...string, description: "Project ID, name, or canonical checkout path; the match must identify one project. Omit to use this session's actual current directory. An explicit project uses its default checkout unless checkout is supplied." },
+          project: { ...string, description: "Project ID, name, or canonical checkout path; this session's current or registered checkout also identifies its project. Omit to use this session's actual current directory. An explicit project uses its default checkout unless checkout is supplied." },
           checkout: { ...string, description: "An existing registered checkout directory in project. Requires project. Omit to use that project's default checkout." },
           title: { ...string, description: "Optional descriptive title. Give idle sessions a useful title so they are easy to find later." },
           agent: { ...string, description: "Exact agent ID or unique display name at the destination, such as build or Plan. Must support primary sessions, not subagent-only use. Omit to use the destination's default agent, not this session's agent." },

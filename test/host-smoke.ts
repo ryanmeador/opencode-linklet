@@ -10,6 +10,7 @@ import { resolve } from "node:path";
 import { OpenCode } from "@opencode/client";
 import { Rpc } from "@opencode/plugin/rpc";
 import { SYNTHETIC_SUFFIX } from "../src/transport.js";
+import { actions } from "../src/policy.js";
 
 const root = await mkdtemp("/tmp/opencode/linklet-validation-");
 const project = resolve(root, "project");
@@ -90,6 +91,28 @@ try {
   assert.equal(admitted.payload.text.slice(admitted.payload.text.indexOf("\n\n") + 2, -SYNTHETIC_SUFFIX.length), body);
   assert.equal((await client.session.active())[idle.sessionID], undefined, "FYI must not wake an idle session");
   assert.equal((await invoke("send_message", { sessionID: idle.sessionID, text: "😀".repeat(16384), delivery: "fyi" })).status, "admitted");
+
+  // Reproduce selecting the caller's worktree path as its project. Denied
+  // boundary rules ensure an accidental cross-project check cannot pass.
+  // Use a repo committed before discovery so its project ID is stable.
+  const reproProject = resolve(root, "worktree-repro");
+  await mkdir(reproProject);
+  execFileSync("git", ["--no-pager", "init", reproProject], { stdio: "ignore" });
+  execFileSync("git", ["--no-pager", "-C", reproProject, "-c", "user.name=Validation", "-c", "user.email=test@example.com",
+    "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "Validation"], { stdio: "ignore" });
+  const canonicalCaller = await client.session.create({ location: { directory: reproProject }, agent: "plan" });
+  const callerWorktree = resolve(root, "caller-worktree");
+  execFileSync("git", ["--no-pager", "-C", reproProject, "worktree", "add", "--detach", callerWorktree, "HEAD"], { stdio: "ignore" });
+  const worktreeCaller = await client.session.create({ location: { directory: callerWorktree }, agent: "plan" });
+  assert.equal(worktreeCaller.projectID, canonicalCaller.projectID);
+  await client.session.update({ sessionID: worktreeCaller.id, permissions: [
+    { action: actions.crossCreate, resource: "*", effect: "deny" },
+    { action: actions.discover, resource: "*", effect: "deny" },
+  ] });
+  const sameProject = await invoke("create_session", { project: callerWorktree, checkout: reproProject, agent: "plan" }, worktreeCaller.id);
+  assert.equal(sameProject.status, "created");
+  assert.equal(sameProject.directory, reproProject);
+  assert.equal((await client.session.get({ sessionID: sameProject.sessionID })).projectID, canonicalCaller.projectID);
 
   // Actual host permission prompt despite default '*' allow; approve once.
   const pendingCreate = invoke("create_session", { agent: "Build", title: "Cross-agent validation" });

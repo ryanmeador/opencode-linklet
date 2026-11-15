@@ -162,18 +162,32 @@ export class Linklet {
     event.message = permissionMessages[event.action];
   }
 
-  async project(selector: string, boundary?: { call: Call; callerProjectID: string; action: string }): Promise<Project> {
+  async project(selector: string, boundary?: { call: Call; callerProjectID: string; callerDirectory: string; action: string }): Promise<Project> {
     const projects = await this.client.project.list({ archived: false });
-    const candidates = projectCandidates(projects, selector);
-    // Matching is private until authorized. Do not leak cross-project candidate
-    // names/paths in an ambiguity error before the boundary approval.
-    if (boundary && (candidates.length !== 1 || candidates[0].id !== boundary.callerProjectID))
-      await this.assert(boundary.call, boundary.action, candidates.length === 1 ? candidates[0].id : selector);
+    // Exact IDs always win. Known caller paths identify its project even when
+    // stale project records share the canonical path. Never inspect other
+    // projects' worktrees while resolving this same-project convenience.
+    const exactID = projects.find(project => project.id === selector);
+    const own = boundary && projects.find(project => project.id === boundary.callerProjectID);
+    if (!exactID && own && boundary && selector.startsWith("/")) {
+      if (selector === own.canonical || selector === boundary.callerDirectory) return own;
+      boundary.call.signal?.throwIfAborted();
+      const checkouts = await this.ctx.worktree.list({ projectID: own.id });
+      boundary.call.signal?.throwIfAborted();
+      if (checkouts.some(checkout => checkout.directory === selector)) return own;
+    }
+    const candidates = exactID ? [exactID] : projectCandidates(projects, selector);
     if (!candidates.length)
       throw new Error(`No registered project matches ${JSON.stringify(selector)}. Use find_projects with all: true to search other projects, then choose an exact project ID.`);
-    if (candidates.length !== 1)
+    if (candidates.length !== 1) {
+      // Ambiguity is discovery, not creation. Keep other projects' candidate
+      // details private until discovery is authorized; create no resources.
+      if (boundary) await this.assert(boundary.call, actions.discover, selector);
       throw new Error(`More than one project matches ${JSON.stringify(selector)}. Ask which project to use, then use its exact project ID. Matching projects: ` +
         JSON.stringify(candidates.slice(0, 20).map(project => ({ id: project.id, name: project.name, directory: project.canonical }))));
+    }
+    if (boundary && candidates[0].id !== boundary.callerProjectID)
+      await this.assert(boundary.call, boundary.action, candidates[0].id);
     return candidates[0];
   }
 
@@ -238,7 +252,7 @@ export class Linklet {
     const since = parseActiveSince(input.activeSince);
     if (input.all) await this.assert(call, actions.discover);
     const projectID = input.all ? undefined : input.project ? (await this.project(input.project, {
-      call, callerProjectID: session.projectID, action: actions.discover,
+      call, callerProjectID: session.projectID, callerDirectory: session.location.directory, action: actions.discover,
     })).id : session.projectID;
     const parentID = relationship === "roots" ? null : relationship === "siblings" ? session.parentID ?? null : undefined;
     const excludeID = relationship === "siblings" ? session.id : undefined;
@@ -341,7 +355,7 @@ export class Linklet {
     const caller = await this.caller(call);
     call.signal?.throwIfAborted();
     const destination = input.project ? await this.project(input.project, {
-      call, callerProjectID: caller.session.projectID, action: actions.crossCreate,
+      call, callerProjectID: caller.session.projectID, callerDirectory: caller.session.location.directory, action: actions.crossCreate,
     }) : undefined;
     call.signal?.throwIfAborted();
     const projectID = destination?.id ?? caller.session.projectID;

@@ -98,6 +98,10 @@ permissions, and host agent-eligibility restrictions still apply.
 - Explicit destination project: accept an existing checkout; if omitted, use
   that project's canonical checkout. Cross-project creation is supported and
   permission-gated.
+- The caller's current or registered checkout path can identify its project.
+  Prefer its own project for duplicate canonical paths; exact project IDs win.
+  Unmatched selectors fail without cross-project approval. Ambiguity requires
+  discovery approval before revealing candidates, not creation approval.
 - Create a new worktree only when requested, including for idle sessions and
   destination projects. Use OpenCode's configured strategy/destination and an
   optional name; leave branch selection and cleanup to existing host tools.

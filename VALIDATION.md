@@ -31,7 +31,7 @@ before/after/permission hooks, foreground-child mid-task replies, native result
 preservation, and an alternative transport test double with unchanged logical
 identity/body/intent/authorization.
 
-Implementation validation on 2026-11-08: **78 contract tests passed**, including
+Implementation validation on 2026-11-13: **83 contract tests passed**, including
 type-check/build; both checkout-build and freshly packed/installed-package host
 smoke suites passed against OpenCode 2.2.6.
 
@@ -60,6 +60,9 @@ for untitled sessions, multiline titles, renames, initial assignments, adapter
 replacement, preserved reply IDs, and ID-free routine receipt text. Display titles
 do not affect policy; cancellation during an outgoing progress update still stops
 the message from being sent.
+Project-resolution coverage checks current/registered caller checkout aliases,
+duplicate canonical paths, unmatched selectors, and discovery-gated ambiguity.
+Exact foreign IDs retain cross-project creation checks.
 
 ## Real-host smoke coverage
 
@@ -67,6 +70,8 @@ the message from being sent.
 and the built production JavaScript through an excluded test-only RPC harness:
 
 - [x] Public tool registration and idle independent creation.
+- [x] Caller-worktree project selection succeeds with explicit cross-project
+  creation/discovery denials, without changing canonical checkout placement.
 - [x] Canonical caller `plan` / destination display names `Plan` and `Build`.
 - [x] Real cross-agent approve-once prompt despite host wildcard defaults.
 - [x] Real always-allow approval reused for a different recipient.
