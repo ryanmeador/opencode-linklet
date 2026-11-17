@@ -3,6 +3,7 @@ import { connect } from "./connection.js";
 import { Linklet, type CreateInput, type FindInput } from "./linklet.js";
 import { syntheticTransport, type Delivery } from "./transport.js";
 import { actions } from "./policy.js";
+import { assertHostVersion } from "./compatibility.js";
 import { projectOutput, sessionOutput, createOutput, sendOutput, toolResult, projectText, sessionText, createText, sendText } from "./results.js";
 
 const string = { type: "string", minLength: 1 } as const;
@@ -13,8 +14,7 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
 export default Plugin.define({
   id: "linklet",
   async setup(ctx) {
-    if (ctx.app.version !== "2.2.6")
-      throw new Error(`This Linklet release supports OpenCode 2.2.6, but this server is running ${ctx.app.version}. Use OpenCode 2.2.6 with this release, or update Linklet to support your server version.`);
+    assertHostVersion(ctx.app.version);
     // Lazy connection: setup must not call back into HTTP while this location's
     // plugins are still activating. Failed connections are not cached forever.
     const transport = syntheticTransport(input => ctx.session.synthetic(input));

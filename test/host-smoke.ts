@@ -59,13 +59,29 @@ const contract = Rpc.define({ id: "linklet.validation", methods: {
   stored: { input: { type: "object" }, output: {} },
 }, events: {} });
 const rpc = client.rpc(contract);
+const waitForHarness = async () => {
+  // Only retry this read-only probe, never a creation or message admission.
+  for (let attempt = 0; attempt < 200; attempt++) {
+    try {
+      await rpc.stored({ key: "validation/readiness" }, { location: { directory: project }, signal: AbortSignal.timeout(5000) });
+      const agents = (await client.agent.list({ location: { directory: project } })).data;
+      if (agents.some(agent => agent.id === "plan") && agents.some(agent => agent.id === "build")) return;
+    } catch (error) {
+      if (!error || typeof error !== "object" || !("type" in error) || error.type !== "rpc.unavailable") throw error;
+    }
+    await new Promise(done => setTimeout(done, 25));
+  }
+  throw new Error("Validation RPC did not become ready");
+};
 try {
   await server.ready;
   const caller = await client.session.create({ location: { directory: project }, agent: "plan", title: "Validation caller" });
+  // Session creation need not wait for location plugins to finish activating.
+  await waitForHarness();
   const invoke = async (tool: string, args: object, sessionID = caller.id, agent = "plan") => {
     const result = await rpc.invoke({ tool: `linklet_${tool}`, args, sessionID, agent }, {
       location: { directory: project }, signal: AbortSignal.timeout(15000),
-    }) as { output: Record<string, any>; content: string };
+    }).catch(error => { throw new Error(`Validation call failed: ${tool} (session ${sessionID})`, { cause: error }); }) as { output: Record<string, any>; content: string };
     assert.equal(typeof result.output, "object", "Tools must return structured output, not a JSON string");
     assert.ok(result.output);
     assert.equal(typeof result.content, "string", "Keep readable text for the tool-call UI");
@@ -129,6 +145,7 @@ try {
   assert.equal((await invoke("send_message", { sessionID: built.sessionID, text: "Follow-up", delivery: "fyi" })).status, "admitted");
   assert.equal((await invoke("send_message", { sessionID: caller.id, text: "Reply", delivery: "fyi" }, built.sessionID, "build")).status, "admitted");
   await client.location.reload();
+  await waitForHarness();
   assert.equal((await invoke("send_message", { sessionID: built.sessionID, text: "After reload", delivery: "fyi" })).status, "admitted");
 
   const waitForApproval = async (action: string) => {
@@ -190,6 +207,7 @@ try {
   await once(server.process, "exit");
   server = start();
   await server.ready;
+  await waitForHarness();
   assert.equal((await invoke("send_message", { sessionID: built.sessionID, text: "After server restart", delivery: "fyi" })).status, "admitted");
   console.log(`Host validation passed (OpenCode ${(await client.server.info()).version}). Artifacts: ${root}`);
 } catch (error) {

@@ -1,5 +1,6 @@
 import type { Plugin } from "@opencode/plugin";
 import { randomBytes } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import type { OpenCodeClient, SessionInfo, SessionActiveOutput, AgentInfo, ModelRef, Project } from "@opencode/client";
 import { actions, askByDefault, Channels, defaultAgent, explicitGrant, match, needsCrossAgent, selectAgent } from "./policy.js";
 import { syntheticTransport, validateBody, type Identity, type Transport, type Delivery } from "./transport.js";
@@ -63,9 +64,16 @@ export class Linklet {
     call.signal?.throwIfAborted();
   }
 
-  // HTTP location routes await destination activation. Native registry reads may
-  // return a not-yet-populated registry while a different location boots.
-  async agents(directory: string) { return (await this.client.agent.list({ location: { directory } })).data; }
+  // New locations can briefly expose an empty registry during activation.
+  // Retry only this read, bounded and cancellable; never retry resource creation.
+  async agents(directory: string, signal?: AbortSignal) {
+    for (let attempt = 0; ; attempt++) {
+      signal?.throwIfAborted();
+      const agents = (await this.client.agent.list({ location: { directory } }, signal ? { signal } : undefined)).data;
+      if (agents.length || attempt === 40) return agents;
+      await delay(50, undefined, { signal });
+    }
+  }
   async effectiveAgent(session: SessionInfo): Promise<string> {
     const agents = await this.agents(session.location.directory);
     if (session.agent) {
@@ -90,7 +98,7 @@ export class Linklet {
   async caller(call: Call) {
     const session = await this.ctx.session.get({ sessionID: call.sessionID });
     // Execution identity wins over the session's current/default selection.
-    const agent = (await this.agents(session.location.directory)).find(item => item.id === call.agent);
+    const agent = (await this.agents(session.location.directory, call.signal)).find(item => item.id === call.agent);
     if (!agent) throw new Error(`The agent running this tool (${JSON.stringify(call.agent)}) is not available in this session's directory. Check the agent configuration before trying again.`);
     return { session, peer: identity(session, agent.id) };
   }
@@ -367,7 +375,7 @@ export class Linklet {
         throw new Error(`Checkout ${JSON.stringify(input.checkout)} is not registered for the selected project. Use find_projects to choose one of that project's checkout directories.`);
       directory = input.checkout;
     }
-    const agents = await this.agents(directory);
+    const agents = await this.agents(directory, call.signal);
     call.signal?.throwIfAborted();
     const agent = input.agent ? selectAgent(agents, input.agent) : await this.destinationDefaults(directory, agents);
     call.signal?.throwIfAborted();
@@ -387,7 +395,7 @@ export class Linklet {
         call.signal?.throwIfAborted();
         // New locations may override defaults/eligibility. Never dispatch into a
         // changed agent configuration without validating and authorizing it.
-        const newAgents = await this.agents(directory);
+        const newAgents = await this.agents(directory, call.signal);
         call.signal?.throwIfAborted();
         const newAgent = input.agent ? selectAgent(newAgents, input.agent) : await this.destinationDefaults(directory, newAgents);
         call.signal?.throwIfAborted();

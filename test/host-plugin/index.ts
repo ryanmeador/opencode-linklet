@@ -19,6 +19,6 @@ export default Plugin.define({ id: "linklet", async setup(ctx) {
         signal: AbortSignal.timeout(15000), progress: async () => {} };
       return tool.execute(input.args, context as unknown as Parameters<typeof tool.execute>[1]);
     },
-    stored: async (value) => ctx.storage.get((value as { key: string }).key) ?? null,
+    stored: async (value) => (await ctx.storage.get((value as { key: string }).key)) ?? null,
   });
 } });

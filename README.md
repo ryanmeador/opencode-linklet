@@ -1,12 +1,17 @@
 # Linklet
 
-Create separate **OpenCode V2 2.2.6** sessions and exchange messages with them.
+Create separate **OpenCode V2** sessions and exchange messages with them.
 New sessions start without the creator's conversation history and can continue
 independently. For self-contained delegated tasks, prefer OpenCode's native
 `subagent` tool and its automatic result delivery.
 
 This is an experimental implementation of [`SPEC.md`](SPEC.md), licensed under
 the [MIT License](LICENSE).
+
+Requires OpenCode **>=2.2.6 <3.0.0**; validated on **2.2.6 and 2.3.0**.
+Newer V2 releases are allowed, not automatically certified by that range.
+The plugin/client SDK dependencies remain pinned to 2.2.6 for reproducible builds;
+those pins do not require the server to run the same version.
 
 ## Install locally
 
@@ -259,7 +264,7 @@ your configuration yourself if replacing it. Native subagents remain unchanged.
 
 ```sh
 npm run check       # type-check, contract tests, production build
-npm run test:host   # opt-in isolated real OpenCode 2.2.6 server validation
+npm run test:host   # opt-in isolated validation against the installed OpenCode
 npm run test:package # pack/install in isolation, then validate the installed build
 ```
 
@@ -268,7 +273,7 @@ user's live configuration, service, or sessions. It makes no model requests and
 retains its artifacts/logs for inspection. `npm pack` builds the production
 output automatically through `prepack`; it does not run the tests.
 
-**Deliberate limits:** exact host/SDK version pin; no transcript/history tools,
+**Deliberate limits:** V2 host compatibility range and pinned SDK dependencies; no transcript/history tools,
 custom inbox/broker, interrupt, archive discovery, automatic forwarding, or
 replacement viewer. The public GUI API has no session-tab context-menu extension,
 so the optional “Copy session ID” convenience is deferred, not replaced with a
