@@ -1,53 +1,73 @@
-# Linklet
+# Linklet for OpenCode
 
-Create separate **OpenCode V2** sessions and exchange messages with them.
-New sessions start without the creator's conversation history and can continue
-independently. For self-contained delegated tasks, prefer OpenCode's native
-`subagent` tool and its automatic result delivery.
+Working across several OpenCode sessions shouldn't make you their message bus.
+When one session needs another's findings, a rebase, or a separate investigation,
+you shouldn't have to copy instructions and results between tabs.
 
-This is an experimental implementation of [`SPEC.md`](SPEC.md), licensed under
-the [MIT License](LICENSE).
+Linklet lets your agents **find other sessions, start independent work, and
+message each other**—within a project or across projects on the same OpenCode
+server. Each session keeps its own context, tools, and permissions, while you stay
+in control of cross-project and cross-agent access.
 
-Requires OpenCode **>=2.2.6 <3.0.0**; validated on **2.2.6 and 2.3.0**.
-Newer V2 releases are allowed, not automatically certified by that range.
-The plugin/client SDK dependencies remain pinned to 2.2.6 for reproducible builds;
-those pins do not require the server to run the same version.
+Use it to:
 
-## Install locally
+- Have a coordinator session find related work and request updates or routine rebases.
+- Start an investigation in a separate session, optionally with its own worktree,
+  and continue that conversation directly.
+- Let specialists exchange findings without copying entire conversations into
+  each other's context.
+
+For a short, self-contained task with an automatic result back, use OpenCode's
+native **subagent** tool. Linklet is for sessions that need to continue
+independently, communicate more than once, or collaborate with existing sessions.
+
+Linklet is an independent community plugin, not an official Anomaly product.
+
+## Installation
+
+Requires OpenCode **>=2.2.6 <3.0.0**. Tested on **2.2.6 and 2.3.0**; other
+versions in that range may work but haven't been tested.
+
+Install from [GitHub](https://github.com/ryanmeador/opencode-linklet):
 
 ```sh
-npm ci
-npm run check
+opencode plugin add github:ryanmeador/opencode-linklet
 ```
 
-Add this checkout to the desired OpenCode configuration (global configuration
-makes coordination available across projects):
+This adds the plugin to your global OpenCode configuration, making it available
+across projects. OpenCode handles package installation and reloads the plugin.
+Use `/reload` if needed.
+
+Alternatively, add it to the `plugins` array in your global
+`~/.config/opencode/opencode.jsonc` or a project's `opencode.jsonc`:
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["/absolute/path/to/opencode-linklet"],
+  "plugins": ["github:ryanmeador/opencode-linklet"],
 }
 ```
 
-Build after source changes with `npm run build`. OpenCode reloads changed plugin
-files/configuration; `/reload` can force a reload. No service restart is needed
-for installation. Do not install `test/host-plugin`: it is an isolated test
-harness, not part of the published package.
+Preserve existing plugin entries. You can pin a release tag or full commit hash
+by appending `#<tag-or-commit>` to the GitHub specification.
 
-If this session runs on OpenCode's shared managed service, no connection options
-are needed. Linklet finds that service, uses its authentication, and checks that
-it is the same process running the plugin. Linklet never starts another server
-or silently connects to a different one.
+### If you run a standalone server
 
-If you start OpenCode with `opencode serve` or `--standalone`, specify the URL of
-the server running your session—not the URL of a separate managed service:
+For OpenCode's managed service, no connection options are needed. If you start
+your own server with `opencode serve` or `--standalone`, Linklet needs its URL
+so it can connect back to **that same server**.
+
+Linklet runs inside OpenCode, but the plugin API does not yet expose every read
+it needs—for example, project discovery and saved approvals. It uses OpenCode's
+HTTP API for those reads; messaging itself stays in-process.
+
+Replace the plugin's string entry with an object like this:
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
   "plugins": [{
-    "package": "/absolute/path/to/opencode-linklet",
+    "package": "github:ryanmeador/opencode-linklet",
     "options": {
       "server": {
         "url": "http://127.0.0.1:4096",
@@ -59,183 +79,69 @@ the server running your session—not the URL of a separate managed service:
 }
 ```
 
-Omit credential fields for an unauthenticated server. `passwordEnv` selects Basic
-authentication (username defaults to `opencode`); alternatively `tokenEnv`
-selects Bearer authentication. Credentials are read from the server process's
-environment, never stored by Linklet. No credentials belong in the URL.
-An explicit URL selects one server. If you use several servers with the same
-global configuration, each needs a configuration that points to its own instance;
-Linklet rejects a connection to the wrong one.
+Use your server's actual URL. The credential settings name environment variables
+already available to the **server process**; they do not set credentials.
+Omit them for an unauthenticated server. For Bearer authentication, use `tokenEnv`
+instead of `passwordEnv` and `usernameEnv`. Do not put secrets in the URL.
 
-## Four tools
+Linklet verifies that it reached the server hosting the session. It never starts
+another server, and it cannot connect sessions on different servers.
 
-Discovery and creation are in the `linklet` Code Mode namespace.
-Sending is exposed directly as `linklet_send_message`, so outgoing messages have
-their own tool entry rather than an `execute` wrapper. Effective host IDs:
+## How it works
 
-| Tool | Inputs and behavior |
+Linklet adds four tools your agents can use:
+
+| Tool | What it does |
 | --- | --- |
-| `linklet_find_projects` | Optional `all`, `search`, `limit`, `offset`. Defaults to this project. Returns registered projects and saved checkouts, including projects without sessions; `nextOffset` continues the result. |
-| `linklet_find_sessions` | Optional `project`, `all`, `search`, `relationship`, `activeSince`, `limit`, `cursor`, or `sessionID` lookup. Defaults to this project; returns metadata, parent/creator relationships, activity, and known execution timestamps—not conversation content. |
-| `linklet_create_session` | Optional `project`, `checkout`, `title`, `agent`, `model`, `worktree`, `task`. Creates a separate session, not a child or a copy of this conversation. Returns without waiting for task completion. Omit task to leave it idle. |
-| `linklet_send_message` | Required `sessionID`, `text`; optional `delivery`: `steer` (default), `queue`, `fyi`. Exactly one explicit recipient; complete body, no aliases or broadcasting. |
+| `find_projects` | Find registered projects and their checkout directories. |
+| `find_sessions` | Find sessions by title, project, relationship, or recent activity—without reading their conversations. |
+| `create_session` | Start an independent session with fresh context, optionally with a worktree and an initial assignment. |
+| `send_message` | Send another session a request or findings, immediately, after its current work, or as an FYI that won't wake it. |
 
-Search pages default to 20 items, maximum 100. Projects match exact IDs/canonical
-paths first, then case-insensitive name/path tokens. The caller's current or
-registered checkout path also identifies its project; duplicate canonical paths
-prefer the caller's own project. An explicit project still uses its canonical
-checkout unless `checkout` is supplied. Unmatched selectors fail without a
-cross-project prompt. Ambiguous selections require discovery approval before
-showing candidates, not creation approval; exact foreign project selections
-retain their normal boundary checks. Agent selection accepts an exact
-agent ID first, then an exact unique display name. Independent sessions need a
-visible agent that supports primary sessions, such as Build or Plan—not a
-subagent-only agent. Models use `{ providerID, id, variant? }` and
-must be available at the destination; use native model-discovery tools.
+For example, ask your agent:
 
-### Recent sessions, roots, and siblings
+> Find the other sessions that worked on this project in the last day. Ask which
+> changes are ready, and coordinate rebases with them. Don't merge anything yet.
 
-`find_sessions` supports:
+Or:
 
-- `relationship: "all"` (default): include independent sessions and native children.
-- `relationship: "roots"`: include sessions without a native parent.
-- `relationship: "siblings"`: other sessions with this session's native parent.
-  For an independent/root caller, this means other roots. The caller is excluded;
-  having the same creator does not make sessions siblings. Project scope still applies.
-- `activeSince`: an ISO 8601 timestamp with a timezone. Include sessions with a
-  known execution start/end on or after that cutoff, plus sessions currently
-  running (even if their execution started earlier). Unknown execution times
-  alone do not match; old blocked sessions are not assumed to be doing work now.
+> Start a separate session in a new worktree to investigate the slow tests.
+> Give it the relevant context and ask it to send its findings back.
 
-Each result includes `lastExecutionAt` when OpenCode reports an execution start or
-end. It is a UTC timestamp for the latest of those two boundaries—not the time of
-the most recent model/tool step. Creation, title changes, viewing, and generic
-metadata updates are deliberately ignored. A missing timestamp means unknown,
-not “never ran.” Current activity is reported separately.
+You don't need to learn the tool parameters. Agents receive tool descriptions
+and usage guidance; the [agent reference](docs/tool-reference.md) covers the
+details for integrations and troubleshooting.
 
-Results also include `commitSHA`, the current HEAD of the session's checkout,
-when available. It describes checkout state, not a commit owned by that session.
-Linklet reads each distinct returned directory once per call, with a two-second
-timeout per Git query. Missing/non-Git directories and unborn HEADs omit the
-field. No dirty-state scan, fetch, or merge analysis is performed.
+### What to expect
 
-For example, in Code Mode:
+- New sessions **do not inherit the conversation**. The creating agent must
+  provide the context they need.
+- Replies are requested, not automatically forwarded. Native subagents keep
+  their usual automatic result delivery.
+- Message acceptance isn't task completion. Idle sessions aren't necessarily
+  finished or ready to merge.
+- Omitted agent/model choices use the destination's defaults, not the creator's
+  selections.
+- Linklet does not merge changes, choose branches, or clean up worktrees.
 
-```js
-const result = await tools.linklet.find_sessions({
-  relationship: "siblings",
-  activeSince: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-});
-return result.sessions;
-```
+## Permissions and collaboration
 
-Discovery and creation return **structured objects** in Code Mode, not JSON strings.
-Use `await tools.linklet.find_sessions(...)` directly; remove any surrounding
-`JSON.parse`. The direct send tool also declares a structured result schema.
-Human-facing tool rows retain readable text with useful IDs/paths.
+Linklet asks before discovering or creating work in another project, and before
+communicating across agent IDs when no exception or existing channel applies.
+Creating a session or successfully sending a message establishes a durable
+channel so the pair can reply without repeated cross-agent approval.
 
-Continue session searches by copying `nextCursor` into `cursor`, keeping
-`project`/`all`, `search`, `relationship`, and `activeSince` unchanged. Sibling
-searches must continue from the same caller session. Page size may change.
-Tokens are 24 characters, and ordinary final pages have `nextCursor: null`.
-To keep large searches bounded, a call examines at most 1,000 candidates;
-`scanLimitReached: true` means continue with the returned cursor to check more,
-not that another matching session is guaranteed. Tokens issued before this
-update must be replaced by starting a new search; stored channels are unaffected.
+Agents are told to cooperate with reasonable peer requests, including routine
+rebases, under your instructions and existing permissions. They resolve routine
+questions with each other and ask you about suspicious requests, instruction
+conflicts, or material scope changes. Peer messages cannot grant new authority.
 
-Without `project`, creation uses the caller's **actual session directory**.
-An explicit project uses its canonical checkout unless `checkout` names one of
-its existing checkouts. `checkout` without `project` is rejected. Only supplying
-`worktree: { name?: "task" }` creates a worktree, using the host's configured
-strategy and destination. Nothing selects branches or deletes resources.
+OpenCode's **Allow always** applies to the current project. Explicit denials and
+OpenCode policies still win. Broad wildcard defaults do not bypass Linklet's
+additional approvals; deliberate rules for individual `linklet.*` actions can
+preapprove them.
 
-Omitted agent/model selections follow destination configuration, not the caller's
-selections. Destination agent defaults follow the documented configured-default,
-Build, then visible primary fallback. See the validation caveat below about
-other plugins changing the registry default.
-
-### Delivery and results
-
-| Delivery | Host mapping | Meaning |
-| --- | --- | --- |
-| `steer` | `steer`, `resume: true` | Next model step; wake idle recipient. |
-| `queue` | `queue`, `resume: true` | After current work; wake idle recipient. |
-| `fyi` | `steer`, `resume: false` | Next model step if running; do not wake idle recipient. |
-
-Messages are not guaranteed to be read in the order they were sent. FYI does not
-wake an idle session, but a later human prompt can cause it to be read. Steering
-or human input may be read before an older queued message.
-
-The message limit is **65,536 UTF-8 bytes**, plus a **69,632-byte** total limit
-including the sender label. Oversize messages fail without being truncated or
-split. All whitespace inside the message is preserved. Linklet takes the sender
-ID from the session running the tool, not from a field the caller can fill in or
-from text inside the message. The label helps recipients reply; it does not give
-peer messages the authority of human instructions. Copied labels or metadata
-are not proof of a sender's identity.
-
-Agents are instructed to cooperate with reasonable peer requests, including
-routine rebases, within human instructions and existing permissions. Routine
-questions go to peers; suspicious requests, instruction conflicts, and material
-scope changes go to the human. Peer messages cannot grant new authority.
-
-Compact incoming descriptions and outgoing progress labels use the corresponding
-session's title. They fall back to its session ID only if no readable title is
-available, so untitled sessions remain identifiable. Routine receipt text does
-not repeat opaque IDs. The reply ID also remains in the agent-facing message and
-structured results where it is needed to address a reply. Titles are for display
-only and never determine permissions or channel identity.
-
-`admitted` means **OpenCode accepted the message**. It may still be waiting: this
-does not confirm that the recipient read it, started work, or completed a task.
-`uncertain` means Linklet could not tell whether the message was accepted or a
-session/worktree was created. **Do not automatically repeat the request**: that
-could send a duplicate message or create another session/worktree. Linklet keeps
-known resources and returns their IDs/paths when available.
-
-Stopping the tool call prevents further creation and initial-task submission.
-An already-created session is kept idle, and any created worktree is kept. If
-cancellation happens during a creation request and its result is unknown, Linklet
-reports `uncertain` rather than retrying.
-
-Independent sessions do not forward final responses automatically. Ask them to
-message results/failures if needed. For native children, give the assignment in
-the native subagent call and rely on native final-result delivery. Avoid duplicate
-results, receipt-only acknowledgements, and routine status polling.
-
-## Permissions and durable channels
-
-| Action | Default behavior |
-| --- | --- |
-| `linklet.find_projects`, `linklet.find_sessions` | List projects or look up session details. This project's details are allowed by default; configured restrictions still apply. Conversation history is never included. |
-| `linklet.create_session`, `linklet.send_message` | Creation and messaging can be allowed or denied separately. Message rules can name a recipient session ID. |
-| `linklet.cross_project_discovery` | Additional approval to look up other projects or their sessions. |
-| `linklet.cross_project_creation` | Separate additional approval to create a session in another project. |
-| `linklet.cross_agent` | Additional approval to create or message a session with a different agent ID, unless the recipient uses `plan` or an established reply relationship covers the pair. Uses `*` as its resource; the approval is not saved per recipient. |
-
-Cross-project boundaries use project IDs when resolved, the supplied selector
-for ambiguous/unknown selections, and `*` for all-project discovery. Known-ID
-messaging requires **no cross-project discovery/creation approval**.
-
-OpenCode's usual defaults allow most tools. Linklet still asks before looking
-outside this project, creating a session in another project, or communicating
-across agent IDs when the exceptions above do not apply. A broad `*` allow rule
-does not skip these additional questions. To approve them in advance, use rules
-that name the relevant Linklet action, or `linklet.*` to cover all Linklet actions.
-
-OpenCode's **Allow always** choice saves approval for the current project, not
-for every project. Linklet uses those saved approvals; it does not keep a
-separate approval database. Configured denials and OpenCode policies still win.
-
-Creating a session, or successfully submitting a message, establishes a **channel**:
-the two sessions can reply or follow up without another cross-agent approval.
-Other tool permissions still apply. Linklet remembers this relationship across
-restarts and reloads, including for native subagents without changing their
-execution or result delivery. The record covers both session IDs **and their
-current agent IDs**; a pair not covered by the record needs fresh approval.
-It does not grant conversation-history access or new execution permissions.
-
-Revoke access using host deny rules; no fifth channel-management tool is added:
+For example, block messages to a particular session:
 
 ```jsonc
 {
@@ -245,50 +151,33 @@ Revoke access using host deny rules; no fifth channel-management tool is added:
 }
 ```
 
-There is no automatic import/migration of another plugin's channels, approvals,
-stored history, or message prefixes. Remove an older coordination plugin from
-your configuration yourself if replacing it. Native subagents remain unchanged.
+## Development
 
-## Implementation and validation
-
-- `src/policy.ts`: canonical identity policy, agent selection, durable channels.
-- `src/transport.ts`: logical peer input, synthetic encoding, receipts, localized
-  compatibility guidance. A future native provenance adapter replaces this
-  boundary, not tool contracts/policy. The native adapter in tests is a test
-  double, not an invented production API.
-- `src/linklet.ts`: public-host operations, authorization, discovery, creation.
-- `src/discovery.ts`: recent-execution timestamps, cutoff validation, and search bounds.
-- `src/results.ts`: structured result schemas and readable tool-row summaries.
-- `src/connection.ts`: authenticated, same-instance public client connection.
-- `src/index.ts`: four tools, context guidance, and native subagent hooks.
+Clone the repository and build with Node.js 22 or later:
 
 ```sh
-npm run check       # type-check, contract tests, production build
-npm run test:host   # opt-in isolated validation against the installed OpenCode
+git clone https://github.com/ryanmeador/opencode-linklet.git
+cd opencode-linklet
+npm ci
+npm run check
+```
+
+For local development, configure the checkout's absolute path instead of the
+GitHub package specification.
+
+```sh
+npm run test:host    # isolated validation against the installed OpenCode
 npm run test:package # pack/install in isolation, then validate the installed build
 ```
 
-Host validation uses a separate HOME/XDG tree under `/tmp/opencode`, never the
-user's live configuration, service, or sessions. It makes no model requests and
-retains its artifacts/logs for inspection. `npm pack` builds the production
-output automatically through `prepack`; it does not run the tests.
+Host tests use a separate HOME/XDG tree under `/tmp/opencode`, make no model
+requests, and do not change your live service or sessions. `npm pack` builds
+through `prepack`; it does not run tests.
 
-**Deliberate limits:** V2 host compatibility range and pinned SDK dependencies; no transcript/history tools,
-custom inbox/broker, interrupt, archive discovery, automatic forwarding, or
-replacement viewer. The public GUI API has no session-tab context-menu extension,
-so the optional “Copy session ID” convenience is deferred, not replaced with a
-different UI.
+Active delivery ordering and full native background execution still need
+model-backed integration tests. See the [agent reference](docs/tool-reference.md)
+for operational limits and detailed permission behavior.
 
-Some plugins change the default agent through `editor.default`, but OpenCode does
-not expose that choice through its public read API. If you use one of those
-plugins, pass `agent` explicitly. Normal configured defaults and primary-agent
-fallbacks are supported. If OpenCode returns a different agent than Linklet
-checked, Linklet keeps the new session idle instead of sending its task.
+## License
 
-Delivery ordering during active work and full native background execution still
-need model-backed integration tests; the contract tests do not prove those
-scheduler guarantees.
-
-`npm audit` currently reports moderate transitive advisories in the pinned
-OpenCode SDK dependency tree. No high/critical advisories were reported during
-implementation; do not force dependency overrides without compatibility testing.
+[MIT](LICENSE).

@@ -6,7 +6,7 @@ const root = await mkdtemp("/tmp/opencode/linklet-package-");
 const packed = JSON.parse(execFileSync("npm", ["pack", "--json", "--pack-destination", root], { encoding: "utf8" })) as
   { filename: string; files: { path: string }[] }[];
 if (packed[0].files.some(file => file.path.startsWith("test/"))) throw new Error("Test-only RPC harness must not ship.");
-for (const path of ["LICENSE", "dist/index.js", "dist/index.d.ts"])
+for (const path of ["LICENSE", "dist/index.js", "dist/index.d.ts", "docs/tool-reference.md"])
   if (!packed[0].files.some(file => file.path === path)) throw new Error(`Missing release file: ${path}`);
 for (const path of ["DOGFOODING.md", "VALIDATION.md"])
   if (packed[0].files.some(file => file.path === path)) throw new Error(`Local report must not ship: ${path}`);

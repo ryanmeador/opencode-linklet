@@ -7,7 +7,7 @@
   "types": "./dist/index.d.ts",
   "engines": { "node": ">=22" },
   "exports": { ".": "./dist/index.js" },
-  "files": ["dist", "README.md", "SPEC.md", "LICENSE"],
+  "files": ["dist", "docs", "README.md", "SPEC.md", "LICENSE"],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepack": "npm run build",
